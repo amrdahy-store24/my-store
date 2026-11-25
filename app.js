@@ -26,6 +26,7 @@ async function go(v, arg) {
   try { products = (await api('/api/products')).products; } catch {}
   const ch = v !== view; view = v; nav(); const f = flash; flash = ''; if (ch) scrollTo(0, 0);
   if (v === 'shop') return shop(f);
+  if (v === 'prod') return prodView(f, arg);
   if (v === 'cart') return cartView(f);
   if (v === 'login' || v === 'register') return authView(v, f);
   if (v === 'orders') return ordersView(f);
@@ -37,14 +38,32 @@ function shop(f) {
   <button class="cta" onclick="document.getElementById('prods').scrollIntoView({behavior:'smooth'})">تصفّح المنتجات ←</button></section>
   <div class="perks"><div class="perk"><i>${ic('truck', 24)}</i><div><b>توصيل سريع</b><span>لحد باب البيت</span></div></div><div class="perk"><i>${ic('cash', 24)}</i><div><b>الدفع عند الاستلام</b><span>ادفع وانت بتستلم</span></div></div><div class="perk"><i>${ic('shield', 24)}</i><div><b>جودة مضمونة</b><span>منتجات مختارة بعناية</span></div></div></div>
   <div class="sh" id="prods"><h3>المنتجات<span>${products.length} منتج</span></h3><div class="search"><input placeholder="ابحث عن منتج..." oninput="filt(this.value)"></div></div>` +
-  (products.length ? `<div class="grid">${products.map(p => `<div class="card" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
+  (products.length ? `<div class="grid">${products.map(p => `<div class="card" onclick="openProd(${p.id})" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
   <div class="b"><div class="nm">${esc(p.name)}</div><div class="small">${esc(p.description)}</div><div class="price">${money(p.price)}<small>ج.م</small></div>
-  <button class="btn" ${p.stock < 1 ? 'disabled' : ''} onclick="addCart(${p.id})">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button></div></div>`).join('')}</div>` : `<div class="panel empty"><div class="e">${ic('bag', 56)}</div>مفيش منتجات حاليًا، ارجع قريب.</div>`);
+  <button class="btn" ${p.stock < 1 ? 'disabled' : ''} onclick="event.stopPropagation();addCart(${p.id})">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button></div></div>`).join('')}</div>` : `<div class="panel empty"><div class="e">${ic('bag', 56)}</div>مفيش منتجات حاليًا، ارجع قريب.</div>`);
 }
-function addCart(id) {
+let after = null;
+function needLogin(next, text) { after = next; flash = msg(text); go('login'); }
+function openProd(id) { if (!me) return needLogin({ v: 'prod', a: id }, 'سجّل دخولك الأول عشان تشوف تفاصيل المنتج'); go('prod', id); }
+function addCart(id, back) {
+  if (!me) return needLogin({ v: 'prod', a: id }, 'لازم تسجّل دخول الأول عشان تطلب');
   const p = products.find(x => x.id === id), it = cart.find(x => x.id === id), q = (it ? it.qty : 0) + 1;
-  if (!p || q > p.stock) { flash = msg('وصلت للحد الأقصى المتاح من المنتج ده'); return go('shop'); }
-  if (it) it.qty = q; else cart.push({ id, qty: 1 }); saveCart(); flash = msg('اتضاف للسلة ✓', 'ok'); go('shop');
+  if (!p || q > p.stock) { flash = msg('وصلت للحد الأقصى المتاح من المنتج ده'); return back ? go('prod', id) : go('shop'); }
+  if (it) it.qty = q; else cart.push({ id, qty: 1 }); saveCart(); flash = msg('اتضاف للسلة ✓', 'ok'); back ? go('prod', id) : go('shop');
+}
+function prodView(f, id) {
+  const p = products.find(x => x.id === id);
+  if (!p) { flash = msg('المنتج مش موجود'); return go('shop'); }
+  const lines = String(p.description || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  const specs = lines.filter(l => /^[^:：]{1,30}[:：]\s*\S/.test(l)).map(l => l.split(/[:：]/)), desc = lines.filter(l => !/^[^:：]{1,30}[:：]\s*\S/.test(l));
+  const st = p.stock < 1 ? '<span class="stk o">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="stk l">باقي ${p.stock} فقط</span>` : '<span class="stk g">متوفر</span>';
+  $('#app').innerHTML = f + `<a class="back" onclick="go('shop')">→ رجوع للمنتجات</a><div class="pd"><div class="pdi ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}</div>
+  <div class="pdb"><h1>${esc(p.name)}</h1><div class="pdp">${money(p.price)}<small>ج.م</small></div>${st}
+  ${desc.length ? `<h4>الوصف</h4><p class="pdd">${desc.map(esc).join('<br>')}</p>` : ''}
+  ${specs.length ? `<h4>المواصفات</h4><table class="spec">${specs.map(r => `<tr><th>${esc(r[0].trim())}</th><td>${esc(r.slice(1).join(':').trim())}</td></tr>`).join('')}</table>` : ''}
+  <div class="cod" style="margin:14px 0">${ic('cash', 18)} الدفع عند الاستلام</div>
+  <button class="btn wide" ${p.stock < 1 ? 'disabled' : ''} onclick="addCart(${p.id}, true)">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button>
+  <button class="btn wide ghost" style="margin-top:8px" onclick="go('cart')">عرض السلة</button></div></div>`;
 }
 function cartView(f) {
   cart = cart.filter(i => products.some(p => p.id === i.id)); saveCart(); nav();
@@ -73,7 +92,7 @@ function authView(v, f) {
   <div class="alt">${reg ? 'عندك حساب؟ <a onclick="go(\'login\')">سجّل دخول</a>' : 'مش عندك حساب؟ <a onclick="go(\'register\')">أنشئ حساب</a>'}</div></div>`;
 }
 async function auth(v) {
-  try { me = (await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value })).user; flash = msg('أهلاً ' + me.username, 'ok'); go(me.role === 'admin' ? 'admin' : 'shop'); }
+  try { me = (await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value })).user; flash = msg('أهلاً ' + me.username, 'ok'); const a = after; after = null; if (a && me.role !== 'admin') go(a.v, a.a); else go(me.role === 'admin' ? 'admin' : 'shop'); }
   catch (e) { $('#m').innerHTML = msg(e.message); }
 }
 async function logout() { await api('/api/logout', 'POST'); me = null; go('shop'); }
