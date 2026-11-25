@@ -121,6 +121,7 @@ async function forgot() {
 async function chPw() {
   try { await api('/api/password', 'POST', { oldPassword: $('#op').value, newPassword: $('#np').value }); $('#op').value = $('#np').value = ''; $('#pm').innerHTML = msg('اتغير الباسورد ✓', 'ok'); } catch (e) { $('#pm').innerHTML = msg(e.message); }
 }
+async function delUser(id, name) { if (!confirm('متأكد إنك عايز تحذف العميل ' + name + '؟ (طلباته القديمة هتفضل)')) return; try { await api('/api/users/' + id, 'DELETE'); flash = msg('اتحذف العميل ✓', 'ok'); } catch (e) { flash = msg(e.message); } go('admin'); }
 async function resetUser(id, name, phone) {
   if (!confirm('تعمل باسورد مؤقت جديد للعميل ' + name + '؟')) return;
   try { const r = await api('/api/users/' + id + '/reset', 'POST'); const t = r.tempPassword, ph = phone ? '2' + phone : '';
