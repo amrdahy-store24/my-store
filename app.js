@@ -1,6 +1,6 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-let owner = '201558221315', me = null, products = [], cart = JSON.parse(localStorage.getItem('cart') || '[]'), flash = '';
+let me = null, offer = null, cat = '', products = [], cart = JSON.parse(localStorage.getItem('cart') || '[]'), flash = '';
 async function api(url, method = 'GET', data) {
   const r = await fetch(url, { method, headers: data ? { 'Content-Type': 'application/json' } : {}, body: data ? JSON.stringify(data) : undefined });
   const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'حصل خطأ'); return j;
@@ -24,24 +24,30 @@ function nav() {
 }
 async function go(v, arg) {
   try { products = (await api('/api/products')).products; } catch {}
-  const ch = v !== view; view = v; nav(); let f = flash; flash = '';
-  if (me && me.role !== 'admin' && me.status !== 'active' && ['shop', 'prod', 'cart'].includes(v)) f += `<div class="msg err" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>${me.status === 'rejected' ? 'حسابك مش متفعّل.' : 'حسابك لسه مش متفعّل، مش هتقدر تطلب لحد ما يتفعّل.'}</span><button class="btn" style="padding:6px 12px" onclick="go('pending')">عايز أفعّل حسابي</button></div>`; if (ch) scrollTo(0, 0);
+  try { offer = (await api('/api/offer')).offer; } catch {}
+  const ch = v !== view; view = v; nav(); const f = flash; flash = '';
   if (v === 'shop') return shop(f);
   if (v === 'prod') return prodView(f, arg);
   if (v === 'cart') return cartView(f);
   if (v === 'login' || v === 'register') return authView(v, f);
   if (v === 'forgot') return forgotView(f);
-  if (v === 'pending') return pendingView(f);
   if (v === 'orders') return ordersView(f);
   if (v === 'admin') return adminView(f, arg);
 }
-function filt(q) { q = q.trim().toLowerCase(); document.querySelectorAll('.card').forEach(c => c.style.display = c.dataset.s.includes(q) ? '' : 'none'); }
+function filt() { const q = ($('#q') ? $('#q').value : '').trim().toLowerCase(); document.querySelectorAll('.card').forEach(c => c.style.display = c.dataset.s.includes(q) && (!cat || c.dataset.c === cat) ? '' : 'none'); }
+function setCat(c) { cat = c; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.c === c)); filt(); }
+const cats = () => [...new Set(products.map(p => p.category).filter(Boolean))];
+const catList = () => [...new Set(['إلكترونيات', 'ملابس', 'أدوات منزلية', 'إكسسوارات', ...products.map(p => p.category).filter(Boolean)])];
+function offerCard() {
+  if (!offer || !offer.on || !(offer.title || offer.text)) return '';
+  return `<section class="offer"${offer.image ? ` style="background-image:linear-gradient(90deg,rgba(15,23,42,.88),rgba(15,23,42,.45)),url('${esc(offer.image)}')"` : ''}><span class="pill">${ic('spark', 14)} عرض</span><h3>${esc(offer.title)}</h3><p>${esc(offer.text)}</p><button class="cta" onclick="document.getElementById('prods').scrollIntoView({behavior:'smooth'})">تسوّق العرض ←</button></section>`;
+}
 function shop(f) {
-  $('#app').innerHTML = f + `<section class="hero"><span class="pill">● تشكيلة جديدة وصلت</span><h2>تسوّق <em>أحلى المنتجات</em><br>بسعر وجودة تستاهلها</h2><p>اختار اللي يعجبك، اطلب في دقيقة، والدفع عند الاستلام لحد باب بيتك.</p>
+  cat = ''; $('#app').innerHTML = f + offerCard() + `<section class="hero"><span class="pill">● تشكيلة جديدة وصلت</span><h2>تسوّق <em>أحلى المنتجات</em><br>بسعر وجودة تستاهلها</h2><p>اختار اللي يعجبك، اطلب في دقيقة، والدفع عند الاستلام لحد باب بيتك.</p>
   <button class="cta" onclick="document.getElementById('prods').scrollIntoView({behavior:'smooth'})">تصفّح المنتجات ←</button></section>
   <div class="perks"><div class="perk"><i>${ic('truck', 24)}</i><div><b>توصيل سريع</b><span>لحد باب البيت</span></div></div><div class="perk"><i>${ic('cash', 24)}</i><div><b>الدفع عند الاستلام</b><span>ادفع وانت بتستلم</span></div></div><div class="perk"><i>${ic('shield', 24)}</i><div><b>جودة مضمونة</b><span>منتجات مختارة بعناية</span></div></div></div>
-  <div class="sh" id="prods"><h3>المنتجات<span>${products.length} منتج</span></h3><div class="search"><input placeholder="ابحث عن منتج..." oninput="filt(this.value)"></div></div>` +
-  (products.length ? `<div class="grid">${products.map(p => `<div class="card" onclick="openProd(${p.id})" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
+  <div class="sh" id="prods"><h3>المنتجات<span>${products.length} منتج</span></h3><div class="search"><input id="q" placeholder="ابحث عن منتج..." oninput="filt()"></div></div>${cats().length > 1 ? `<div class="chips"><button class="chip on" data-c="" onclick="setCat('')">الكل</button>${cats().map(c => `<button class="chip" data-c="${esc(c)}" onclick="setCat(this.dataset.c)">${esc(c)}</button>`).join('')}</div>` : ''}` +
+  (products.length ? `<div class="grid">${products.map(p => `<div class="card" onclick="openProd(${p.id})" data-c="${esc(p.category || '')}" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
   <div class="b"><div class="nm">${esc(p.name)}</div><div class="small">${esc(p.description)}</div><div class="price">${money(p.price)}<small>ج.م</small></div>
   <button class="btn" ${p.stock < 1 ? 'disabled' : ''} onclick="event.stopPropagation();addCart(${p.id})">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button></div></div>`).join('')}</div>` : `<div class="panel empty"><div class="e">${ic('bag', 56)}</div>مفيش منتجات حاليًا، ارجع قريب.</div>`);
 }
@@ -50,7 +56,6 @@ function needLogin(next, text) { after = next; flash = msg(text); go('login'); }
 function openProd(id) { if (!me) return needLogin({ v: 'prod', a: id }, 'سجّل دخولك الأول عشان تشوف تفاصيل المنتج'); go('prod', id); }
 function addCart(id, back) {
   if (!me) return needLogin({ v: 'prod', a: id }, 'لازم تسجّل دخول الأول عشان تطلب');
-  if (me.status !== 'active' && me.role !== 'admin') return go('pending');
   const p = products.find(x => x.id === id), it = cart.find(x => x.id === id), q = (it ? it.qty : 0) + 1;
   if (!p || q > p.stock) { flash = msg('وصلت للحد الأقصى المتاح من المنتج ده'); return back ? go('prod', id) : go('shop'); }
   if (it) it.qty = q; else cart.push({ id, qty: 1 }); saveCart(); flash = msg('اتضاف للسلة ✓', 'ok'); back ? go('prod', id) : go('shop');
@@ -62,7 +67,7 @@ function prodView(f, id) {
   const specs = lines.filter(l => /^[^:：]{1,30}[:：]\s*\S/.test(l)).map(l => l.split(/[:：]/)), desc = lines.filter(l => !/^[^:：]{1,30}[:：]\s*\S/.test(l));
   const st = p.stock < 1 ? '<span class="stk o">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="stk l">باقي ${p.stock} فقط</span>` : '<span class="stk g">متوفر</span>';
   $('#app').innerHTML = f + `<a class="back" onclick="go('shop')">→ رجوع للمنتجات</a><div class="pd"><div class="pdi ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}</div>
-  <div class="pdb"><h1>${esc(p.name)}</h1><div class="pdp">${money(p.price)}<small>ج.م</small></div>${st}
+  <div class="pdb">${p.category ? `<span class="catpill">${esc(p.category)}</span>` : ''}<h1>${esc(p.name)}</h1><div class="pdp">${money(p.price)}<small>ج.م</small></div>${st}
   ${desc.length ? `<h4>الوصف</h4><p class="pdd">${desc.map(esc).join('<br>')}</p>` : ''}
   ${specs.length ? `<h4>المواصفات</h4><table class="spec">${specs.map(r => `<tr><th>${esc(r[0].trim())}</th><td>${esc(r.slice(1).join(':').trim())}</td></tr>`).join('')}</table>` : ''}
   <div class="cod" style="margin:14px 0">${ic('cash', 18)} الدفع عند الاستلام</div>
@@ -78,7 +83,7 @@ function cartView(f) {
   const total = cart.reduce((s, i) => s + products.find(x => x.id === i.id).price * i.qty, 0);
   $('#app').innerHTML = f + `<h2 style="margin:6px 0 14px;font-weight:800">سلة المشتريات</h2><div class="cartwrap"><div class="panel">${rows}</div><div class="panel sum"><h2>ملخص الطلب</h2>
   <div class="ln"><span>عدد القطع</span><span>${cartCount()}</span></div><div class="ln"><span>التوصيل</span><span>يتحدد عند التأكيد</span></div><div class="ln big"><span>الإجمالي</span><span>${money(total)} ج.م</span></div>
-  ${me && me.status !== 'active' && me.role !== 'admin' ? '<p class="small">حسابك لسه مش متفعّل، فعّله الأول عشان تكمل الطلب.</p><button class="btn wide" onclick="go(\'pending\')">عايز أفعّل حسابي</button>' : me ? `<div id="m"></div><label>العنوان</label><input id="addr" placeholder="المحافظة، المدينة، الشارع"><label>رقم التليفون</label><input id="ph" inputmode="tel" placeholder="01xxxxxxxxx"><div class="cod">${ic('cash', 18)} الدفع عند الاستلام</div><button class="btn wide" onclick="checkout()">تأكيد الطلب</button>`
+  ${me ? `<div id="m"></div><label>العنوان</label><input id="addr" placeholder="المحافظة، المدينة، الشارع"><label>رقم التليفون</label><input id="ph" inputmode="tel" placeholder="01xxxxxxxxx"><div class="cod">${ic('cash', 18)} الدفع عند الاستلام</div><button class="btn wide" onclick="checkout()">تأكيد الطلب</button>`
        : '<p class="small">لازم تسجل دخول عشان تكمل الطلب.</p><button class="btn wide" onclick="go(\'login\')">دخول</button>'}</div></div>`;
 }
 function setQty(id, q) { q = parseInt(q, 10) || 0; const p = products.find(x => x.id === id);
@@ -97,20 +102,9 @@ function authView(v, f) {
   <div class="alt">${reg ? 'عندك حساب؟ <a onclick="go(\'login\')">سجّل دخول</a>' : 'مش عندك حساب؟ <a onclick="go(\'register\')">أنشئ حساب</a>'}</div></div>`;
 }
 async function auth(v) {
-  try { me = (await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value, phone: v === 'register' ? $('#ph').value : undefined })).user; flash = msg('أهلاً ' + me.username, 'ok'); const a = after; after = null; if (me.role !== 'admin' && me.status !== 'active') go('pending'); else if (a && me.role !== 'admin') go(a.v, a.a); else go(me.role === 'admin' ? 'admin' : 'shop'); }
+  try { me = (await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value, phone: v === 'register' ? $('#ph').value : undefined })).user; flash = msg('أهلاً ' + me.username, 'ok'); const a = after; after = null; if (a && me.role !== 'admin') go(a.v, a.a); else go(me.role === 'admin' ? 'admin' : 'shop'); }
   catch (e) { $('#m').innerHTML = msg(e.message); }
 }
-function waLink() { const t = encodeURIComponent('السلام عليكم، عايز أفعّل حسابي في المتجر.\nاسم المستخدم: ' + me.username + '\nرقم الموبايل: ' + (me.phone || '')); return `https://wa.me/${owner}?text=${t}`; }
-function pendingView(f) {
-  if (!me) return go('login');
-  const rej = me.status === 'rejected';
-  $('#app').innerHTML = f + `<div class="panel narrow"><div class="ai">${ic(rej ? 'lock' : 'shield', 30)}</div><h2>${rej ? 'الحساب مش متفعّل' : 'حسابك في انتظار التفعيل'}</h2>
-  <p class="small" style="margin-top:-8px">${rej ? 'صاحب المتجر مرفضش تفعيل الحساب ده. لو شايف إن ده غلط كلّمه على واتساب.' : 'تقدر تتصفح المنتجات دلوقتي، لكن مش هتقدر تطلب إلا بعد التفعيل. ابعت رسالة واتساب لصاحب المتجر وهيفعّل حسابك في ثواني.'}</p>
-  <a class="btn wide wa" href="${waLink()}" target="_blank" rel="noopener">${ic('spark', 18)} عايز أفعّل حسابي</a>
-  <button class="btn wide ghost" style="margin-top:8px" onclick="go('shop')">تصفّح المنتجات</button></div>`;
-}
-async function delUser(id, name) { if (!confirm('متأكد إنك عايز تحذف العميل ' + name + '؟ (طلباته القديمة هتفضل)')) return; try { await api('/api/users/' + id, 'DELETE'); flash = msg('اتحذف العميل ✓', 'ok'); } catch (e) { flash = msg(e.message); } go('admin'); }
-async function setUserStatus(id, st) { try { await api('/api/users/' + id + '/status', 'POST', { status: st }); flash = msg(st === 'active' ? 'اتفعّل الحساب ✓' : st === 'rejected' ? 'اترفض الحساب' : 'رجع في الانتظار', 'ok'); } catch (e) { flash = msg(e.message); } go('admin'); }
 function forgotView(f) {
   $('#app').innerHTML = `<div class="panel narrow"><div class="ai">${ic('lock', 30)}</div><h2>نسيت الباسورد؟</h2><p class="small" style="margin-top:-8px">اكتب اسم المستخدم ورقم الموبايل اللي سجلت بيه، وهنبعتلك باسورد مؤقت على الواتساب.</p>${f}<div id="m"></div>
   <label>اسم المستخدم</label><input id="u" autocapitalize="none"><label>رقم الموبايل</label><input id="ph" inputmode="tel" placeholder="01xxxxxxxxx" onkeydown="if(event.key==='Enter')forgot()">
@@ -144,18 +138,29 @@ async function adminView(f, tab) {
   const { orders } = await api('/api/orders'); const { users } = await api('/api/users'); const e = editing || {};
   const rev = orders.filter(o => o.status !== 'ملغي').reduce((s, o) => s + Number(o.total), 0);
   $('#app').innerHTML = f + `<h2 style="margin:6px 0 14px;font-weight:800">لوحة التحكم</h2><div class="stats"><div class="stat"><span>المنتجات</span><b>${products.length}</b></div><div class="stat"><span>الطلبات</span><b>${orders.length}</b></div>
-  <div class="stat"><span>طلبات جديدة</span><b>${orders.filter(o => o.status === 'جديد').length}</b></div><div class="stat"><span>إجمالي المبيعات</span><b>${money(rev)} ج.م</b></div><div class="stat"><span>العملاء</span><b>${users.length}</b></div><div class="stat"><span>في انتظار التفعيل</span><b>${users.filter(x => x.status === 'pending').length}</b></div></div>
+  <div class="stat"><span>طلبات جديدة</span><b>${orders.filter(o => o.status === 'جديد').length}</b></div><div class="stat"><span>إجمالي المبيعات</span><b>${money(rev)} ج.م</b></div><div class="stat"><span>العملاء</span><b>${users.length}</b></div></div>
   <div class="adm"><div class="panel"><h2>${editing ? 'تعديل منتج' : 'إضافة منتج'}</h2><div id="m"></div>
   <label>الاسم</label><input id="n" value="${esc(e.name)}"><label>السعر (ج.م)</label><input id="pr" type="number" min="0" step="0.01" value="${e.price ?? ''}">
-  <label>الكمية المتاحة</label><input id="st" type="number" min="0" value="${e.stock ?? ''}"><label>الوصف</label><textarea id="d" rows="3">${esc(e.description)}</textarea>
+  <label>القسم</label><input id="cg" list="cgl" value="${esc(e.category)}" placeholder="اختار قسم أو اكتب قسم جديد"><datalist id="cgl">${catList().map(c => `<option value="${esc(c)}">`).join('')}</datalist><label>الكمية المتاحة</label><input id="st" type="number" min="0" value="${e.stock ?? ''}"><label>الوصف</label><textarea id="d" rows="3">${esc(e.description)}</textarea>
   <label>صورة المنتج (اختياري - ارفع صورة أو حط رابط)</label><input id="img" value="${esc(e.image && !e.image.startsWith('data:') ? e.image : '')}" placeholder="https://..."><input type="file" id="file" accept="image/*">
   <div class="row"><button class="btn" onclick="saveProd()">${editing ? 'حفظ التعديل' : '＋ إضافة المنتج'}</button>${editing ? '<button class="btn gray" onclick="editing=null;go(\'admin\')">إلغاء</button>' : ''}</div></div>
-  <div><div class="panel"><h2>المنتجات (${products.length})</h2>${products.map(p => `<div class="pr"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div><div><b>${esc(p.name)}</b><div class="sm">${money(p.price)} ج.م • الكمية ${p.stock}</div></div>
+  <div><div class="panel"><h2>كارت العروض (أعلى الصفحة الرئيسية)</h2><div id="om"></div>
+  <label class="chk"><input type="checkbox" id="on" ${offer && offer.on ? 'checked' : ''}> ظاهر في الصفحة الرئيسية</label>
+  <label>عنوان العرض</label><input id="ot" value="${esc(offer && offer.title)}"><label>نص العرض</label><textarea id="ox" rows="2">${esc(offer && offer.text)}</textarea>
+  <label>صورة خلفية (اختياري - رابط أو ارفع صورة)</label><input id="oi" value="${esc(offer && offer.image && !offer.image.startsWith('data:') ? offer.image : '')}" placeholder="https://..."><input type="file" id="of" accept="image/*">
+  <button class="btn" onclick="saveOffer()">حفظ العرض</button></div>
+  <div class="panel"><h2>المنتجات (${products.length})</h2>${products.map(p => `<div class="pr"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div><div><b>${esc(p.name)}</b><div class="sm">${money(p.price)} ج.م • الكمية ${p.stock}</div></div>
   <div class="row"><button class="btn gray" onclick="editProd(${p.id})">تعديل</button><button class="btn red" onclick="delProd(${p.id})">حذف</button></div></div>`).join('') || '<div class="empty">لسه مفيش منتجات.</div>'}</div>
-  <div class="panel"><h2>العملاء المسجلين (${users.length})</h2>${users.map(x => `<div class="pr" style="grid-template-columns:1fr auto"><div><b>${esc(x.username)}</b>${x.status === 'pending' ? ' <span class="st s2">في انتظار التفعيل</span>' : x.status === 'rejected' ? ' <span class="st s4">مرفوض</span>' : ' <span class="st s3">مفعّل</span>'}${x.resetAt ? ' <span class="st s2">طلب نسيان باسورد</span>' : ''}<div class="sm" dir="ltr" style="text-align:right">${esc(x.phone) || 'بدون رقم'} • ${x.createdAt ? new Date(x.createdAt).toLocaleDateString('en-GB') : '-'}</div><div id="rs${x.id}"></div></div>
-  <div class="row">${x.status !== 'active' ? `<button class="btn" onclick="setUserStatus(${x.id},'active')">تفعيل</button>` : ''}${x.status === 'pending' ? `<button class="btn red" onclick="setUserStatus(${x.id},'rejected')">رفض</button>` : x.status === 'active' ? `<button class="btn gray" onclick="setUserStatus(${x.id},'pending')">إيقاف</button>` : ''}<button class="btn red" onclick="delUser(${x.id},'${esc(x.username)}')">حذف</button><button class="btn gray" onclick="resetUser(${x.id},'${esc(x.username)}','${esc(x.phone)}')">باسورد مؤقت</button></div></div>`).join('') || '<div class="empty">لسه مفيش عملاء.</div>'}</div>
+  <div class="panel"><h2>العملاء المسجلين (${users.length})</h2>${users.map(x => `<div class="pr" style="grid-template-columns:1fr auto"><div><b>${esc(x.username)}</b>${x.resetAt ? ' <span class="st s2">طلب نسيان باسورد</span>' : ''}<div class="sm" dir="ltr" style="text-align:right">${esc(x.phone) || 'بدون رقم'} • ${x.createdAt ? new Date(x.createdAt).toLocaleDateString('en-GB') : '-'}</div><div id="rs${x.id}"></div></div>
+  <div class="row"><button class="btn red" onclick="delUser(${x.id},'${esc(x.username)}')">حذف</button><button class="btn gray" onclick="resetUser(${x.id},'${esc(x.username)}','${esc(x.phone)}')">باسورد مؤقت</button></div></div>`).join('') || '<div class="empty">لسه مفيش عملاء.</div>'}</div>
   <div class="panel"><h2>الطلبات (${orders.length})</h2>${orders.map(o => `<div class="ord"><div class="h"><b>#${o.id} • ${esc(o.username)}</b><span class="st ${stc(o.status)}">${esc(o.status)}</span></div><div class="small">${money(o.total)} ج.م • ${esc(o.phone)} • ${esc(o.address)}</div><div>${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div>
   <select onchange="setStatus(${o.id},this.value)">${['جديد', 'تم الشحن', 'تم التسليم', 'ملغي'].map(s => `<option ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`).join('') || '<div class="empty">مفيش طلبات.</div>'}</div></div></div>`;
+}
+async function saveOffer() {
+  try { let image = $('#oi').value.trim(); const file = $('#of').files[0];
+    if (file) image = await readFile(file); else if (!image && offer && offer.image && offer.image.startsWith('data:')) image = offer.image;
+    await api('/api/offer', 'PUT', { on: $('#on').checked, title: $('#ot').value, text: $('#ox').value, image }); flash = msg('اتحفظ العرض ✓', 'ok'); go('admin');
+  } catch (e) { $('#om').innerHTML = msg(e.message); }
 }
 function editProd(id) { editing = products.find(p => p.id === id); go('admin'); scrollTo(0, 0); }
 async function delProd(id) { if (!confirm('متأكد إنك عايز تحذف المنتج؟')) return; try { await api('/api/products/' + id, 'DELETE'); flash = msg('اتحذف ✓', 'ok'); } catch (e) { flash = msg(e.message); } go('admin'); }
@@ -165,9 +170,9 @@ async function saveProd() {
   try {
     let image = $('#img').value.trim(); const file = $('#file').files[0];
     if (file) image = await readFile(file); else if (!image && editing && editing.image.startsWith('data:')) image = editing.image;
-    const data = { name: $('#n').value, price: $('#pr').value, stock: $('#st').value, description: $('#d').value, image };
+    const data = { name: $('#n').value, price: $('#pr').value, stock: $('#st').value, description: $('#d').value, image, category: $('#cg').value };
     if (editing) await api('/api/products/' + editing.id, 'PUT', data); else await api('/api/products', 'POST', data);
     flash = msg(editing ? 'اتعدل ✓' : 'اتضاف ✓', 'ok'); editing = null; go('admin');
   } catch (e) { $('#m').innerHTML = msg(e.message); }
 }
-(async () => { try { owner = (await api('/api/config')).ownerWhatsapp; } catch {} try { me = (await api('/api/me')).user; } catch {} go('shop'); })();
+(async () => { try { me = (await api('/api/me')).user; } catch {} go('shop'); })();

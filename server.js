@@ -48,6 +48,7 @@ function normPhone(v) { let x = String(v || '').replace(/[\s\-()]/g, '').replace
 class Err extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 function need(u, role) { if (!u) throw new Err(401, 'سجّل دخولك الأول'); if (role && u.role !== role) throw new Err(403, 'غير مسموح'); }
 
+function getOffer() { return db.offer || { on: true, title: 'عرض لفترة محدودة', text: 'سماعات Reno airpods: أول 3 قطع بـ 690 جنيه فقط بدل 750 جنيه للقطعة', image: '' }; }
 function cleanProduct(b) {
   const name = String(b.name || '').trim(), price = Number(b.price), stock = parseInt(b.stock, 10);
   if (!name) throw new Err(400, 'اسم المنتج مطلوب');
@@ -55,7 +56,7 @@ function cleanProduct(b) {
   if (!(stock >= 0)) throw new Err(400, 'الكمية غير صحيحة');
   const image = String(b.image || '');
   if (image && !/^(https?:\/\/|data:image\/)/.test(image)) throw new Err(400, 'رابط الصورة غير صحيح');
-  return { name: name.slice(0, 100), price: Math.round(price * 100) / 100, stock, description: String(b.description || '').slice(0, 1000), image };
+  return { name: name.slice(0, 100), price: Math.round(price * 100) / 100, stock, description: String(b.description || '').slice(0, 1000), image, category: String(b.category || '').trim().slice(0, 40) };
 }
 
 async function api(req, res, url) {
@@ -69,7 +70,7 @@ async function api(req, res, url) {
     const phone = normPhone(b.phone); if (!phone) throw new Err(400, 'اكتب رقم موبايل مصري صحيح (مثال 01012345678)');
     if (db.users.some(x => x.phone === phone)) throw new Err(409, 'الرقم ده مسجل بحساب تاني');
     const salt = crypto.randomBytes(16).toString('hex');
-    const nu = { id: db.nextId++, username, salt, hash: hash(pw, salt), role: 'customer', phone, status: 'pending', createdAt: new Date().toISOString() };
+    const nu = { id: db.nextId++, username, salt, hash: hash(pw, salt), role: 'customer', phone, status: 'active', createdAt: new Date().toISOString() };
     db.users.push(nu); save(db);
     return login(res, nu);
   }
@@ -108,12 +109,13 @@ async function api(req, res, url) {
     const mm = /sid=([a-f0-9]+)/.exec(req.headers.cookie || ''); if (mm) sessions.delete(mm[1]);
     return send(res, 200, { ok: true }, { 'Set-Cookie': 'sid=; Path=/; Max-Age=0' });
   }
-  if (m === 'GET' && p === '/api/config') return send(res, 200, { ownerWhatsapp: OWNER_WHATSAPP });
-  mr = /^\/api\/users\/(\d+)\/status$/.exec(p);
-  if (m === 'POST' && mr) {
-    need(u, 'admin'); const b = await body(req), x = db.users.find(y => y.id == mr[1] && y.role === 'customer'); if (!x) throw new Err(404, 'العميل مش موجود');
-    if (!['active', 'pending', 'rejected'].includes(b.status)) throw new Err(400, 'حالة غير صحيحة'); x.status = b.status; save(db); return send(res, 200, { ok: true });
+  if (m === 'GET' && p === '/api/offer') return send(res, 200, { offer: getOffer() });
+  if (m === 'PUT' && p === '/api/offer') {
+    need(u, 'admin'); const b = await body(req), image = String(b.image || '');
+    if (image && !/^(https?:\/\/|data:image\/)/.test(image)) throw new Err(400, 'رابط الصورة غير صحيح');
+    db.offer = { on: !!b.on, title: String(b.title || '').trim().slice(0, 80), text: String(b.text || '').trim().slice(0, 300), image }; save(db); return send(res, 200, { offer: db.offer });
   }
+  if (m === 'GET' && p === '/api/config') return send(res, 200, { ownerWhatsapp: OWNER_WHATSAPP });
   if (m === 'GET' && p === '/api/me') return send(res, 200, { user: pub(u) });
   if (m === 'GET' && p === '/api/products') return send(res, 200, { products: db.products });
   if (m === 'POST' && p === '/api/products') {
@@ -129,7 +131,7 @@ async function api(req, res, url) {
     if (db.products.length === n) throw new Err(404, 'المنتج مش موجود'); save(db); return send(res, 200, { ok: true });
   }
   if (m === 'POST' && p === '/api/orders') {
-    need(u); if ((u.status || 'active') !== 'active') throw new Err(403, 'حسابك لسه مش مفعل، كلّم صاحب المتجر على واتساب عشان يتفعل');
+    need(u);
     const b = await body(req); const items = [];
     if (!Array.isArray(b.items) || !b.items.length) throw new Err(400, 'السلة فاضية');
     for (const it of b.items) {
@@ -176,5 +178,5 @@ function start() { http.createServer(async (req, res) => {
     await pool.query('CREATE TABLE IF NOT EXISTS store(id int primary key, data jsonb not null)');
     const r = await pool.query('SELECT data FROM store WHERE id=1'); stored = r.rows[0] && r.rows[0].data;
   }
-  db = load(stored); db.sessions = db.sessions || {}; save(db); start();
+  db = load(stored); db.sessions = db.sessions || {}; db.users.forEach(x => { if (x.role === 'customer') x.status = 'active'; }); db.products.forEach(x => { if (x.category === undefined) x.category = 'إلكترونيات'; }); save(db); start();
 })();
