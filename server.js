@@ -42,6 +42,7 @@ function getUser(req) {
   return id ? db.users.find(u => u.id === id) : null;
 }
 const pub = u => u && { id: u.id, username: u.username, role: u.role };
+function normPhone(v) { let x = String(v || '').replace(/[\s\-()]/g, '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)); if (x.startsWith('+20')) x = '0' + x.slice(3); else if (x.startsWith('0020')) x = '0' + x.slice(4); return /^01[0125]\d{8}$/.test(x) ? x : ''; }
 class Err extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 function need(u, role) { if (!u) throw new Err(401, 'سجّل دخولك الأول'); if (role && u.role !== role) throw new Err(403, 'غير مسموح'); }
 
@@ -63,8 +64,10 @@ async function api(req, res, url) {
     if (!/^[a-z0-9_.]{3,20}$/.test(username)) throw new Err(400, 'اليوزر 3-20 حرف إنجليزي أو أرقام أو _ .');
     if (pw.length < 6) throw new Err(400, 'الباسورد لازم 6 حروف على الأقل');
     if (db.users.some(x => x.username === username)) throw new Err(409, 'اليوزر ده مستخدم، اختار غيره');
+    const phone = normPhone(b.phone); if (!phone) throw new Err(400, 'اكتب رقم موبايل مصري صحيح (مثال 01012345678)');
+    if (db.users.some(x => x.phone === phone)) throw new Err(409, 'الرقم ده مسجل بحساب تاني');
     const salt = crypto.randomBytes(16).toString('hex');
-    const nu = { id: db.nextId++, username, salt, hash: hash(pw, salt), role: 'customer' };
+    const nu = { id: db.nextId++, username, salt, hash: hash(pw, salt), role: 'customer', phone, createdAt: new Date().toISOString() };
     db.users.push(nu); save(db);
     return login(res, nu);
   }
@@ -74,6 +77,24 @@ async function api(req, res, url) {
     if (!x || !crypto.timingSafeEqual(Buffer.from(hash(String(b.password || ''), x.salt), 'hex'), Buffer.from(x.hash, 'hex')))
       throw new Err(401, 'اليوزر أو الباسورد غلط');
     return login(res, x);
+  }
+  if (m === 'POST' && p === '/api/forgot') {
+    const b = await body(req); const x = db.users.find(y => y.username === String(b.username || '').trim().toLowerCase()), ph = normPhone(b.phone);
+    if (x && x.role === 'customer' && x.phone && ph && x.phone === ph) { x.resetAt = new Date().toISOString(); save(db); }
+    return send(res, 200, { ok: true });
+  }
+  if (m === 'POST' && p === '/api/password') {
+    need(u); const b = await body(req), np = String(b.newPassword || '');
+    if (!crypto.timingSafeEqual(Buffer.from(hash(String(b.oldPassword || ''), u.salt), 'hex'), Buffer.from(u.hash, 'hex'))) throw new Err(400, 'الباسورد القديم غلط');
+    if (np.length < 6) throw new Err(400, 'الباسورد الجديد لازم 6 حروف على الأقل');
+    u.salt = crypto.randomBytes(16).toString('hex'); u.hash = hash(np, u.salt); save(db); return send(res, 200, { ok: true });
+  }
+  if (m === 'GET' && p === '/api/users') { need(u, 'admin'); return send(res, 200, { users: db.users.filter(x => x.role === 'customer').map(x => ({ id: x.id, username: x.username, phone: x.phone || '', createdAt: x.createdAt || '', resetAt: x.resetAt || '' })).reverse() }); }
+  let mr = /^\/api\/users\/(\d+)\/reset$/.exec(p);
+  if (m === 'POST' && mr) {
+    need(u, 'admin'); const x = db.users.find(y => y.id == mr[1] && y.role === 'customer'); if (!x) throw new Err(404, 'العميل مش موجود');
+    const al = 'abcdefghjkmnpqrstuvwxyz23456789'; let t = ''; for (const by of crypto.randomBytes(8)) t += al[by % al.length];
+    x.salt = crypto.randomBytes(16).toString('hex'); x.hash = hash(t, x.salt); delete x.resetAt; save(db); return send(res, 200, { tempPassword: t });
   }
   if (m === 'POST' && p === '/api/logout') {
     const mm = /sid=([a-f0-9]+)/.exec(req.headers.cookie || ''); if (mm) sessions.delete(mm[1]);

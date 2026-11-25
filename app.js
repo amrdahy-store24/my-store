@@ -29,6 +29,7 @@ async function go(v, arg) {
   if (v === 'prod') return prodView(f, arg);
   if (v === 'cart') return cartView(f);
   if (v === 'login' || v === 'register') return authView(v, f);
+  if (v === 'forgot') return forgotView(f);
   if (v === 'orders') return ordersView(f);
   if (v === 'admin') return adminView(f, arg);
 }
@@ -87,13 +88,32 @@ async function checkout() {
 function authView(v, f) {
   const reg = v === 'register';
   $('#app').innerHTML = `<div class="panel narrow"><div class="ai">${ic(reg ? 'spark' : 'lock', 30)}</div><h2>${reg ? 'إنشاء حساب جديد' : 'أهلاً بيك تاني'}</h2><p class="small" style="margin-top:-8px">${reg ? 'سجّل في ثواني وابدأ اطلب' : 'سجّل دخولك عشان تكمل طلباتك'}</p>${f}<div id="m"></div><label>اسم المستخدم</label><input id="u" autocomplete="username" autocapitalize="none">
-  <label>الباسورد</label><input id="p" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" onkeydown="if(event.key==='Enter')auth('${v}')">
+  ${reg ? '<label>رقم الموبايل</label><input id="ph" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx">' : ''}<label>الباسورد</label><input id="p" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" onkeydown="if(event.key==='Enter')auth('${v}')">
   <button class="btn wide" onclick="auth('${v}')">${reg ? 'إنشاء الحساب' : 'دخول'}</button>
+  ${reg ? '' : '<div class="alt" style="margin-top:10px"><a onclick="go(\'forgot\')">نسيت الباسورد؟</a></div>'}
   <div class="alt">${reg ? 'عندك حساب؟ <a onclick="go(\'login\')">سجّل دخول</a>' : 'مش عندك حساب؟ <a onclick="go(\'register\')">أنشئ حساب</a>'}</div></div>`;
 }
 async function auth(v) {
-  try { me = (await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value })).user; flash = msg('أهلاً ' + me.username, 'ok'); const a = after; after = null; if (a && me.role !== 'admin') go(a.v, a.a); else go(me.role === 'admin' ? 'admin' : 'shop'); }
+  try { me = (await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value, phone: v === 'register' ? $('#ph').value : undefined })).user; flash = msg('أهلاً ' + me.username, 'ok'); const a = after; after = null; if (a && me.role !== 'admin') go(a.v, a.a); else go(me.role === 'admin' ? 'admin' : 'shop'); }
   catch (e) { $('#m').innerHTML = msg(e.message); }
+}
+function forgotView(f) {
+  $('#app').innerHTML = `<div class="panel narrow"><div class="ai">${ic('lock', 30)}</div><h2>نسيت الباسورد؟</h2><p class="small" style="margin-top:-8px">اكتب اسم المستخدم ورقم الموبايل اللي سجلت بيه، وهنبعتلك باسورد مؤقت على الواتساب.</p>${f}<div id="m"></div>
+  <label>اسم المستخدم</label><input id="u" autocapitalize="none"><label>رقم الموبايل</label><input id="ph" inputmode="tel" placeholder="01xxxxxxxxx" onkeydown="if(event.key==='Enter')forgot()">
+  <button class="btn wide" onclick="forgot()">إرسال الطلب</button><div class="alt"><a onclick="go('login')">رجوع لتسجيل الدخول</a></div></div>`;
+}
+async function forgot() {
+  try { await api('/api/forgot', 'POST', { username: $('#u').value, phone: $('#ph').value });
+    $('#m').innerHTML = msg('لو البيانات مظبوطة، طلبك وصل للإدارة وهيتواصلوا معاك على رقم الموبايل بباسورد مؤقت خلال وقت قصير.', 'ok'); } catch (e) { $('#m').innerHTML = msg(e.message); }
+}
+async function chPw() {
+  try { await api('/api/password', 'POST', { oldPassword: $('#op').value, newPassword: $('#np').value }); $('#op').value = $('#np').value = ''; $('#pm').innerHTML = msg('اتغير الباسورد ✓', 'ok'); } catch (e) { $('#pm').innerHTML = msg(e.message); }
+}
+async function resetUser(id, name, phone) {
+  if (!confirm('تعمل باسورد مؤقت جديد للعميل ' + name + '؟')) return;
+  try { const r = await api('/api/users/' + id + '/reset', 'POST'); const t = r.tempPassword, ph = phone ? '2' + phone : '';
+    const txt = encodeURIComponent('أهلاً ' + name + '، الباسورد المؤقت بتاعك للمتجر: ' + t + ' . ادخل بيه وغيّره من صفحة طلباتي.');
+    $('#rs' + id).innerHTML = `<div class="msg ok">الباسورد المؤقت: <b dir="ltr">${t}</b>${ph ? ` <a href="https://wa.me/${ph}?text=${txt}" target="_blank" rel="noopener" style="font-weight:800">ابعته واتساب</a>` : ''}</div>`; } catch (e) { alert(e.message); }
 }
 async function logout() { await api('/api/logout', 'POST'); me = null; go('shop'); }
 const stc = s => ({ 'جديد': '', 'تم الشحن': 's2', 'تم التسليم': 's3', 'ملغي': 's4' }[s] || '');
@@ -102,15 +122,15 @@ async function ordersView(f) {
   const { orders } = await api('/api/orders');
   $('#app').innerHTML = f + `<div class="panel"><h2>${me.role === 'admin' ? 'كل الطلبات' : 'طلباتي'}</h2>` + (orders.length ? orders.map(o => `<div class="ord"><div class="h"><b>طلب #${o.id}</b><span class="st ${stc(o.status)}">${esc(o.status)}</span></div>
   <div class="small">${esc(o.username)} • ${new Date(o.date).toLocaleString('ar-EG')}</div>
-  <div style="margin:6px 0">${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div><div><b>${money(o.total)} ج.م</b> <span class="small">• ${esc(o.address)} • ${esc(o.phone)}</span></div></div>`).join('') : `<div class="empty"><div class="e">${ic('box', 56)}</div>مفيش طلبات لحد دلوقتي.</div>`) + '</div>';
+  <div style="margin:6px 0">${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div><div><b>${money(o.total)} ج.م</b> <span class="small">• ${esc(o.address)} • ${esc(o.phone)}</span></div></div>`).join('') : `<div class="empty"><div class="e">${ic('box', 56)}</div>مفيش طلبات لحد دلوقتي.</div>`) + `</div><div class="panel narrow" style="margin-top:16px"><h2>تغيير الباسورد</h2><div id="pm"></div><label>الباسورد الحالي</label><input id="op" type="password" autocomplete="current-password"><label>الباسورد الجديد</label><input id="np" type="password" autocomplete="new-password"><button class="btn wide" onclick="chPw()">حفظ الباسورد الجديد</button></div>`;
 }
 let editing = null;
 async function adminView(f, tab) {
   if (!me || me.role !== 'admin') return go('login');
-  const { orders } = await api('/api/orders'); const e = editing || {};
+  const { orders } = await api('/api/orders'); const { users } = await api('/api/users'); const e = editing || {};
   const rev = orders.filter(o => o.status !== 'ملغي').reduce((s, o) => s + Number(o.total), 0);
   $('#app').innerHTML = f + `<h2 style="margin:6px 0 14px;font-weight:800">لوحة التحكم</h2><div class="stats"><div class="stat"><span>المنتجات</span><b>${products.length}</b></div><div class="stat"><span>الطلبات</span><b>${orders.length}</b></div>
-  <div class="stat"><span>طلبات جديدة</span><b>${orders.filter(o => o.status === 'جديد').length}</b></div><div class="stat"><span>إجمالي المبيعات</span><b>${money(rev)} ج.م</b></div></div>
+  <div class="stat"><span>طلبات جديدة</span><b>${orders.filter(o => o.status === 'جديد').length}</b></div><div class="stat"><span>إجمالي المبيعات</span><b>${money(rev)} ج.م</b></div><div class="stat"><span>العملاء</span><b>${users.length}</b></div></div>
   <div class="adm"><div class="panel"><h2>${editing ? 'تعديل منتج' : 'إضافة منتج'}</h2><div id="m"></div>
   <label>الاسم</label><input id="n" value="${esc(e.name)}"><label>السعر (ج.م)</label><input id="pr" type="number" min="0" step="0.01" value="${e.price ?? ''}">
   <label>الكمية المتاحة</label><input id="st" type="number" min="0" value="${e.stock ?? ''}"><label>الوصف</label><textarea id="d" rows="3">${esc(e.description)}</textarea>
@@ -118,6 +138,8 @@ async function adminView(f, tab) {
   <div class="row"><button class="btn" onclick="saveProd()">${editing ? 'حفظ التعديل' : '＋ إضافة المنتج'}</button>${editing ? '<button class="btn gray" onclick="editing=null;go(\'admin\')">إلغاء</button>' : ''}</div></div>
   <div><div class="panel"><h2>المنتجات (${products.length})</h2>${products.map(p => `<div class="pr"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div><div><b>${esc(p.name)}</b><div class="sm">${money(p.price)} ج.م • الكمية ${p.stock}</div></div>
   <div class="row"><button class="btn gray" onclick="editProd(${p.id})">تعديل</button><button class="btn red" onclick="delProd(${p.id})">حذف</button></div></div>`).join('') || '<div class="empty">لسه مفيش منتجات.</div>'}</div>
+  <div class="panel"><h2>العملاء المسجلين (${users.length})</h2>${users.map(x => `<div class="pr" style="grid-template-columns:1fr auto"><div><b>${esc(x.username)}</b>${x.resetAt ? ' <span class="st s2">طلب نسيان باسورد</span>' : ''}<div class="sm" dir="ltr" style="text-align:right">${esc(x.phone) || 'بدون رقم'} • ${x.createdAt ? new Date(x.createdAt).toLocaleDateString('en-GB') : '-'}</div><div id="rs${x.id}"></div></div>
+  <div class="row"><button class="btn gray" onclick="resetUser(${x.id},'${esc(x.username)}','${esc(x.phone)}')">باسورد مؤقت</button></div></div>`).join('') || '<div class="empty">لسه مفيش عملاء.</div>'}</div>
   <div class="panel"><h2>الطلبات (${orders.length})</h2>${orders.map(o => `<div class="ord"><div class="h"><b>#${o.id} • ${esc(o.username)}</b><span class="st ${stc(o.status)}">${esc(o.status)}</span></div><div class="small">${money(o.total)} ج.م • ${esc(o.phone)} • ${esc(o.address)}</div><div>${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div>
   <select onchange="setStatus(${o.id},this.value)">${['جديد', 'تم الشحن', 'تم التسليم', 'ملغي'].map(s => `<option ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`).join('') || '<div class="empty">مفيش طلبات.</div>'}</div></div></div>`;
 }
