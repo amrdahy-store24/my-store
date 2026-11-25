@@ -16,6 +16,10 @@ const ph = id => `background:linear-gradient(135deg,${grads[id % grads.length]})
 const imgStyle = p => p.image ? `background-image:url('${esc(p.image)}')` : ph(p.id);
 const imgIn = p => p.image ? '' : ic('bag', 46);
 let view = 'shop';
+const SUN = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>', MOON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>';
+function paintTheme() { const d = document.documentElement.getAttribute('data-theme') === 'dark'; const b = $('#tg'); if (b) { b.innerHTML = d ? SUN : MOON; b.title = d ? 'الوضع الفاتح' : 'الوضع الداكن'; } }
+function toggleTheme() { const d = document.documentElement.getAttribute('data-theme') === 'dark'; if (d) document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', 'dark'); try { localStorage.setItem('theme', d ? 'light' : 'dark'); } catch {} paintTheme(); }
+paintTheme();
 function nav() {
   const b = (v, ic, t, x = '') => `<button class="${view === v ? 'on' : ''}" onclick="go('${v}')"><span class="ic">${ic}</span>${t}${x}</button>`;
   $('#nav').innerHTML = b('shop', ic('home'), 'الرئيسية') + b('cart', ic('cart'), 'السلة', cartCount() ? `<span class="badge">${cartCount()}</span>` : '') +
