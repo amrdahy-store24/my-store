@@ -42,21 +42,21 @@ function filt() { const q = ($('#q') ? $('#q').value : '').trim().toLowerCase();
 function setCat(c) { cat = c; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.c === c)); filt(); }
 const cats = () => [...new Set(products.map(p => p.category).filter(Boolean))];
 const catList = () => [...new Set(['إلكترونيات', 'ملابس', 'أدوات منزلية', 'إكسسوارات', ...products.map(p => p.category).filter(Boolean)])];
-function offerCard() {
-  if (!offer || !offer.on) return '';
-  const items = String(offer.text || '').split('\n').map(s => s.trim()).filter(Boolean);
-  if (!items.length) return '';
-  const lab = offer.title ? `<b class="tl">${ic('spark', 14)} ${esc(offer.title)}</b>` : '';
-  const one = items.map(t => `<span class="ti">${lab}<span>${esc(t)}</span></span>`).join('');
-  const half = one.repeat(Math.max(2, Math.ceil(6 / items.length)));
-  const chars = items.join('').length * Math.max(2, Math.ceil(6 / items.length));
-  const dur = Math.max(25, Math.round(chars * 0.3));
-  return `<section class="ticker" aria-label="العروض" ontouchstart="this.classList.add('hold')" ontouchend="setTimeout(()=>this.classList.remove('hold'),1500)"><div class="tk" style="animation-duration:${dur}s"><div class="th">${half}</div><div class="th" aria-hidden="true">${half}</div></div></section>`;
+let slI = 0, slT = null;
+function slGo(n) { const s = document.querySelectorAll('.slider .slide'); if (!s.length) return; slI = (n + s.length) % s.length; s.forEach((e, i) => e.classList.toggle('on', i === slI)); document.querySelectorAll('.slider .dot').forEach((e, i) => { e.classList.toggle('on', i === slI); e.setAttribute('aria-current', i === slI); }); }
+function slStart() { clearInterval(slT); const el = document.querySelector('.slider'); if (!el || el.querySelectorAll('.slide').length < 2 || matchMedia('(prefers-reduced-motion:reduce)').matches) return; slT = setInterval(() => { const e = document.querySelector('.slider'); if (!e) { clearInterval(slT); return; } if (e.classList.contains('pz')) return; slGo(slI + 1); }, 5000); }
+let slX = 0;
+function sliderHtml() {
+  const items = offer && offer.on ? String(offer.text || '').split('\n').map(s => s.trim()).filter(Boolean) : [];
+  const go = "document.getElementById('prods').scrollIntoView({behavior:'smooth'})";
+  const hero = `<section class="slide hero on"><span class="pill">● تشكيلة جديدة وصلت</span><h2>تسوّق <em>أحلى المنتجات</em><br>بسعر وجودة تستاهلها</h2><p>اختار اللي يعجبك، اطلب في دقيقة، والدفع عند الاستلام لحد باب بيتك.</p><button class="cta" onclick="${go}">تصفّح المنتجات ←</button></section>`;
+  const offs = items.map(t => `<section class="slide offer"><span class="pill">${ic('spark', 14)} ${esc(offer.title || 'عرض')}</span><h3>${esc(t)}</h3><button class="cta" onclick="${go}">تسوّق العرض ←</button></section>`).join('');
+  if (!items.length) return `<div class="slider">${hero}</div>`;
+  const n = items.length + 1;
+  return `<div class="slider" role="region" aria-roledescription="carousel" aria-label="العروض" onmouseenter="this.classList.add('pz')" onmouseleave="this.classList.remove('pz')" onfocusin="this.classList.add('pz')" onfocusout="this.classList.remove('pz')" ontouchstart="slX=event.touches[0].clientX;this.classList.add('pz')" ontouchend="const d=event.changedTouches[0].clientX-slX;if(Math.abs(d)>40)slGo(slI+(d<0?1:-1));setTimeout(()=>this.classList.remove('pz'),3000)"><div class="sl">${hero}${offs}</div><button class="arr nx" aria-label="السابق" onclick="slGo(slI-1)">${'›'}</button><button class="arr pv" aria-label="التالي" onclick="slGo(slI+1)">${'‹'}</button><div class="dots">${Array.from({ length: n }, (_, j) => `<button class="dot${j ? '' : ' on'}" aria-label="شريحة ${j + 1}" onclick="slGo(${j})"></button>`).join('')}</div></div>`;
 }
 function shop(f) {
-  cat = ''; $('#app').innerHTML = f + offerCard() + `<section class="hero"><span class="pill">● تشكيلة جديدة وصلت</span><h2>تسوّق <em>أحلى المنتجات</em><br>بسعر وجودة تستاهلها</h2><p>اختار اللي يعجبك، اطلب في دقيقة، والدفع عند الاستلام لحد باب بيتك.</p>
-  <button class="cta" onclick="document.getElementById('prods').scrollIntoView({behavior:'smooth'})">تصفّح المنتجات ←</button></section>
-  <div class="perks"><div class="perk"><i>${ic('truck', 24)}</i><div><b>توصيل سريع</b><span>لحد باب البيت</span></div></div><div class="perk"><i>${ic('cash', 24)}</i><div><b>الدفع عند الاستلام</b><span>ادفع وانت بتستلم</span></div></div><div class="perk"><i>${ic('shield', 24)}</i><div><b>جودة مضمونة</b><span>منتجات مختارة بعناية</span></div></div></div>
+  cat = ''; slI = 0; setTimeout(slStart, 0); $('#app').innerHTML = f + sliderHtml() + `<div class="perks"><div class="perk"><i>${ic('truck', 24)}</i><div><b>توصيل سريع</b><span>لحد باب البيت</span></div></div><div class="perk"><i>${ic('cash', 24)}</i><div><b>الدفع عند الاستلام</b><span>ادفع وانت بتستلم</span></div></div><div class="perk"><i>${ic('shield', 24)}</i><div><b>جودة مضمونة</b><span>منتجات مختارة بعناية</span></div></div></div>
   <div class="sh" id="prods"><h3>المنتجات<span>${products.length} منتج</span></h3><div class="search"><input id="q" placeholder="ابحث عن منتج..." oninput="filt()"></div></div>${cats().length > 0 ? `<div class="chips"><button class="chip on" data-c="" onclick="setCat('')">الكل</button>${cats().map(c => `<button class="chip" data-c="${esc(c)}" onclick="setCat(this.dataset.c)">${esc(c)}</button>`).join('')}</div>` : ''}` +
   (products.length ? `<div class="grid">${products.map(p => `<div class="card" onclick="openProd(${p.id})" data-c="${esc(p.category || '')}" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
   <div class="b"><div class="nm">${esc(p.name)}</div><div class="small">${esc(p.description)}</div><div class="price">${money(p.price)}<small>ج.م</small></div>
@@ -156,9 +156,9 @@ async function adminView(f, tab) {
   <label>القسم</label><input id="cg" list="cgl" value="${esc(e.category)}" placeholder="اختار قسم أو اكتب قسم جديد"><datalist id="cgl">${catList().map(c => `<option value="${esc(c)}">`).join('')}</datalist><label>الكمية المتاحة</label><input id="st" type="number" min="0" value="${e.stock ?? ''}"><label>الوصف</label><textarea id="d" rows="3">${esc(e.description)}</textarea>
   <label>صورة المنتج (اختياري - ارفع صورة أو حط رابط)</label><input id="img" value="${esc(e.image && !e.image.startsWith('data:') ? e.image : '')}" placeholder="https://..."><input type="file" id="file" accept="image/*">
   <div class="row"><button class="btn" onclick="saveProd()">${editing ? 'حفظ التعديل' : '＋ إضافة المنتج'}</button>${editing ? '<button class="btn gray" onclick="editing=null;go(\'admin\')">إلغاء</button>' : ''}</div></div>
-  <div><div class="panel"><h2>شريط العروض المتحرك (أعلى الصفحة الرئيسية)</h2><div id="om"></div>
+  <div><div class="panel"><h2>شرائح العروض (السلايدر أعلى الصفحة الرئيسية)</h2><div id="om"></div>
   <label class="chk"><input type="checkbox" id="on" ${offer && offer.on ? 'checked' : ''}> ظاهر في الصفحة الرئيسية</label>
-  <label>عنوان صغير قبل كل عرض (اختياري، مثلاً: عرض)</label><input id="ot" value="${esc(offer && offer.title)}"><label>نص العروض (كل سطر عرض منفصل في الشريط المتحرك)</label><textarea id="ox" rows="4">${esc(offer && offer.text)}</textarea>
+  <label>عنوان صغير فوق كل عرض (اختياري، مثلاً: عرض)</label><input id="ot" value="${esc(offer && offer.title)}"><label>نص العروض (كل سطر عرض = شريحة منفصلة في السلايدر)</label><textarea id="ox" rows="4">${esc(offer && offer.text)}</textarea>
   
   <button class="btn" onclick="saveOffer()">حفظ العرض</button></div>
   <div class="panel"><h2>المنتجات (${products.length})</h2>${products.map(p => `<div class="pr"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div><div><b>${esc(p.name)}</b><div class="sm">${money(p.price)} ج.م • الكمية ${p.stock}</div></div>
