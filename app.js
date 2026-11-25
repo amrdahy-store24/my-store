@@ -8,25 +8,38 @@ async function api(url, method = 'GET', data) {
 const saveCart = () => localStorage.setItem('cart', JSON.stringify(cart));
 const cartCount = () => cart.reduce((s, i) => s + i.qty, 0);
 const msg = (t, c = 'err') => `<div class="msg ${c}">${esc(t)}</div>`;
+const P = { home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>', cart: '<circle cx="9" cy="20" r="1.6"/><circle cx="18" cy="20" r="1.6"/><path d="M2 3h3l2.6 12.2a1 1 0 001 .8h9.2a1 1 0 001-.8L21 7H6"/>', user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/>', plus: '<circle cx="10" cy="8" r="4"/><path d="M2 21c0-4 3.4-6.5 8-6.5"/><path d="M18 14v6M15 17h6"/>', box: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>', gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>', out: '<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>', truck: '<path d="M1 4h13v12H1zM14 8h4l3 3v5h-7"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>', cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 10v4M18 10v4"/>', shield: '<path d="M12 3l8 3v6c0 5-3.4 8.4-8 9-4.6-.6-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5L16 9.5"/>', trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>', bag: '<path d="M5 8h14l-1 12H6L5 8z"/><path d="M9 8V6a3 3 0 016 0v2"/>', spark: '<path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/>', lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>' };
+const ic = (n, z = 20) => `<svg width="${z}" height="${z}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
+const money = n => Number(n).toLocaleString('en-US');
+const grads = ['#6d5efc,#8b7bff', '#0ea5a4,#34d399', '#f59e0b,#fb7185', '#2563eb,#38bdf8', '#db2777,#f472b6', '#7c3aed,#c084fc'];
+const ph = id => `background:linear-gradient(135deg,${grads[id % grads.length]})`;
+const imgStyle = p => p.image ? `background-image:url('${esc(p.image)}')` : ph(p.id);
+const imgIn = p => p.image ? '' : ic('bag', 46);
+let view = 'shop';
 function nav() {
-  $('#nav').innerHTML = `<button onclick="go('shop')">المنتجات</button><button onclick="go('cart')">🛒 السلة (${cartCount()})</button>` +
-    (me ? `${me.role === 'admin' ? '<button onclick="go(\'admin\')">لوحة التحكم</button>' : ''}<button onclick="go('orders')">طلباتي</button><span>👤 ${esc(me.username)}</span><button onclick="logout()">خروج</button>`
-        : `<button onclick="go('login')">دخول</button><button onclick="go('register')">حساب جديد</button>`);
+  const b = (v, ic, t, x = '') => `<button class="${view === v ? 'on' : ''}" onclick="go('${v}')"><span class="ic">${ic}</span>${t}${x}</button>`;
+  $('#nav').innerHTML = b('shop', ic('home'), 'الرئيسية') + b('cart', ic('cart'), 'السلة', cartCount() ? `<span class="badge">${cartCount()}</span>` : '') +
+    (me ? `${me.role === 'admin' ? b('admin', ic('gear'), 'لوحة التحكم') : ''}${b('orders', ic('box'), 'طلباتي')}<span class="usr">${esc(me.username)}</span><button onclick="logout()"><span class="ic">${ic('out')}</span>خروج</button>`
+        : b('login', ic('user'), 'دخول') + b('register', ic('plus'), 'حساب جديد'));
 }
 async function go(v, arg) {
   try { products = (await api('/api/products')).products; } catch {}
-  nav(); const f = flash; flash = '';
+  const ch = v !== view; view = v; nav(); const f = flash; flash = ''; if (ch) scrollTo(0, 0);
   if (v === 'shop') return shop(f);
   if (v === 'cart') return cartView(f);
   if (v === 'login' || v === 'register') return authView(v, f);
   if (v === 'orders') return ordersView(f);
   if (v === 'admin') return adminView(f, arg);
 }
+function filt(q) { q = q.trim().toLowerCase(); document.querySelectorAll('.card').forEach(c => c.style.display = c.dataset.s.includes(q) ? '' : 'none'); }
 function shop(f) {
-  $('#app').innerHTML = f + (products.length ? `<div class="grid">${products.map(p => `<div class="card"><div class="img" style="${p.image ? `background-image:url('${esc(p.image)}')` : ''}">${p.image ? '' : '📦'}</div>
-  <div class="b"><b>${esc(p.name)}</b><div class="small">${esc(p.description)}</div><div class="price">${p.price} ج.م</div>
-  <div class="small">${p.stock > 0 ? 'متاح: ' + p.stock : 'نفذت الكمية'}</div>
-  <button class="btn" ${p.stock < 1 ? 'disabled' : ''} onclick="addCart(${p.id})">أضف للسلة</button></div></div>`).join('')}</div>` : '<div class="panel">مفيش منتجات حاليًا.</div>');
+  $('#app').innerHTML = f + `<section class="hero"><span class="pill">● تشكيلة جديدة وصلت</span><h2>تسوّق <em>أحلى المنتجات</em><br>بسعر وجودة تستاهلها</h2><p>اختار اللي يعجبك، اطلب في دقيقة، والدفع عند الاستلام لحد باب بيتك.</p>
+  <button class="cta" onclick="document.getElementById('prods').scrollIntoView({behavior:'smooth'})">تصفّح المنتجات ←</button></section>
+  <div class="perks"><div class="perk"><i>${ic('truck', 24)}</i><div><b>توصيل سريع</b><span>لحد باب البيت</span></div></div><div class="perk"><i>${ic('cash', 24)}</i><div><b>الدفع عند الاستلام</b><span>ادفع وانت بتستلم</span></div></div><div class="perk"><i>${ic('shield', 24)}</i><div><b>جودة مضمونة</b><span>منتجات مختارة بعناية</span></div></div></div>
+  <div class="sh" id="prods"><h3>المنتجات<span>${products.length} منتج</span></h3><div class="search"><input placeholder="ابحث عن منتج..." oninput="filt(this.value)"></div></div>` +
+  (products.length ? `<div class="grid">${products.map(p => `<div class="card" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
+  <div class="b"><div class="nm">${esc(p.name)}</div><div class="small">${esc(p.description)}</div><div class="price">${money(p.price)}<small>ج.م</small></div>
+  <button class="btn" ${p.stock < 1 ? 'disabled' : ''} onclick="addCart(${p.id})">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button></div></div>`).join('')}</div>` : `<div class="panel empty"><div class="e">${ic('bag', 56)}</div>مفيش منتجات حاليًا، ارجع قريب.</div>`);
 }
 function addCart(id) {
   const p = products.find(x => x.id === id), it = cart.find(x => x.id === id), q = (it ? it.qty : 0) + 1;
@@ -35,52 +48,59 @@ function addCart(id) {
 }
 function cartView(f) {
   cart = cart.filter(i => products.some(p => p.id === i.id)); saveCart(); nav();
-  if (!cart.length) return $('#app').innerHTML = f + '<div class="panel">السلة فاضية.</div>';
-  const rows = cart.map(i => { const p = products.find(x => x.id === i.id); return `<tr><td>${esc(p.name)}</td><td>${p.price}</td>
-  <td><input type="number" min="1" max="${p.stock}" value="${i.qty}" style="width:70px;margin:0" onchange="setQty(${i.id},this.value)"></td><td>${p.price * i.qty}</td>
-  <td><button class="btn red" onclick="setQty(${i.id},0)">حذف</button></td></tr>`; }).join('');
+  if (!cart.length) return $('#app').innerHTML = f + `<div class="panel empty"><div class="e">${ic('cart', 56)}</div><h2>السلة فاضية</h2><button class="btn" onclick="go(\'shop\')">ابدأ التسوّق</button></div>`;
+  const rows = cart.map(i => { const p = products.find(x => x.id === i.id); return `<div class="ci"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div>
+  <div><b>${esc(p.name)}</b><div class="p">${money(p.price)} ج.م للقطعة</div><div class="stp" style="margin-top:6px"><button onclick="setQty(${i.id},${i.qty + 1})">+</button><span>${i.qty}</span><button onclick="setQty(${i.id},${i.qty - 1})">−</button></div></div>
+  <div><div class="tot">${money(p.price * i.qty)} ج.م</div><button class="rm" onclick="setQty(${i.id},0)">${ic('trash', 14)} حذف</button></div></div>`; }).join('');
   const total = cart.reduce((s, i) => s + products.find(x => x.id === i.id).price * i.qty, 0);
-  $('#app').innerHTML = f + `<div class="panel"><table><tr><th>المنتج</th><th>السعر</th><th>الكمية</th><th>الإجمالي</th><th></th></tr>${rows}</table><h3>الإجمالي: ${total} ج.م</h3>
-  ${me ? `<div id="m"></div><label>العنوان</label><input id="addr"><label>رقم التليفون</label><input id="ph" inputmode="tel"><button class="btn" onclick="checkout()">تأكيد الطلب (الدفع عند الاستلام)</button>`
-       : '<p>لازم تسجل دخول عشان تكمل الطلب.</p><button class="btn" onclick="go(\'login\')">دخول</button>'}</div>`;
+  $('#app').innerHTML = f + `<h2 style="margin:6px 0 14px;font-weight:800">سلة المشتريات</h2><div class="cartwrap"><div class="panel">${rows}</div><div class="panel sum"><h2>ملخص الطلب</h2>
+  <div class="ln"><span>عدد القطع</span><span>${cartCount()}</span></div><div class="ln"><span>التوصيل</span><span>يتحدد عند التأكيد</span></div><div class="ln big"><span>الإجمالي</span><span>${money(total)} ج.م</span></div>
+  ${me ? `<div id="m"></div><label>العنوان</label><input id="addr" placeholder="المحافظة، المدينة، الشارع"><label>رقم التليفون</label><input id="ph" inputmode="tel" placeholder="01xxxxxxxxx"><div class="cod">${ic('cash', 18)} الدفع عند الاستلام</div><button class="btn wide" onclick="checkout()">تأكيد الطلب</button>`
+       : '<p class="small">لازم تسجل دخول عشان تكمل الطلب.</p><button class="btn wide" onclick="go(\'login\')">دخول</button>'}</div></div>`;
 }
 function setQty(id, q) { q = parseInt(q, 10) || 0; const p = products.find(x => x.id === id);
   if (q > p.stock) { q = p.stock; flash = msg('الكمية المتاحة ' + p.stock + ' فقط'); }
   cart = q > 0 ? cart.map(i => i.id === id ? { ...i, qty: q } : i) : cart.filter(i => i.id !== id); saveCart(); go('cart'); }
 async function checkout() {
   try { await api('/api/orders', 'POST', { items: cart, address: $('#addr').value, phone: $('#ph').value });
-    cart = []; saveCart(); flash = msg('تم تسجيل طلبك بنجاح ✓', 'ok'); go('orders'); } catch (e) { $('#m').innerHTML = msg(e.message); }
+    cart = []; saveCart(); flash = msg('تم تسجيل طلبك بنجاح ✓ هنتواصل معاك قريب', 'ok'); go('orders'); } catch (e) { $('#m').innerHTML = msg(e.message); }
 }
 function authView(v, f) {
   const reg = v === 'register';
-  $('#app').innerHTML = `<div class="panel narrow"><h2>${reg ? 'حساب جديد' : 'تسجيل الدخول'}</h2>${f}<div id="m"></div><label>اسم المستخدم</label><input id="u" autocomplete="username">
+  $('#app').innerHTML = `<div class="panel narrow"><div class="ai">${ic(reg ? 'spark' : 'lock', 30)}</div><h2>${reg ? 'إنشاء حساب جديد' : 'أهلاً بيك تاني'}</h2><p class="small" style="margin-top:-8px">${reg ? 'سجّل في ثواني وابدأ اطلب' : 'سجّل دخولك عشان تكمل طلباتك'}</p>${f}<div id="m"></div><label>اسم المستخدم</label><input id="u" autocomplete="username" autocapitalize="none">
   <label>الباسورد</label><input id="p" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" onkeydown="if(event.key==='Enter')auth('${v}')">
-  <button class="btn" style="width:100%" onclick="auth('${v}')">${reg ? 'إنشاء الحساب' : 'دخول'}</button></div>`;
+  <button class="btn wide" onclick="auth('${v}')">${reg ? 'إنشاء الحساب' : 'دخول'}</button>
+  <div class="alt">${reg ? 'عندك حساب؟ <a onclick="go(\'login\')">سجّل دخول</a>' : 'مش عندك حساب؟ <a onclick="go(\'register\')">أنشئ حساب</a>'}</div></div>`;
 }
 async function auth(v) {
   try { me = (await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value })).user; flash = msg('أهلاً ' + me.username, 'ok'); go(me.role === 'admin' ? 'admin' : 'shop'); }
   catch (e) { $('#m').innerHTML = msg(e.message); }
 }
 async function logout() { await api('/api/logout', 'POST'); me = null; go('shop'); }
+const stc = s => ({ 'جديد': '', 'تم الشحن': 's2', 'تم التسليم': 's3', 'ملغي': 's4' }[s] || '');
 async function ordersView(f) {
   if (!me) return go('login');
   const { orders } = await api('/api/orders');
-  $('#app').innerHTML = f + `<div class="panel"><h2>${me.role === 'admin' ? 'كل الطلبات' : 'طلباتي'}</h2>` + (orders.length ? orders.map(o => `<div class="panel" style="background:#f8fafc"><b>طلب #${o.id}</b> - ${esc(o.username)} - ${new Date(o.date).toLocaleString('ar-EG')} - <b>${esc(o.status)}</b>
-  <div>${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div><div>الإجمالي: ${o.total} ج.م | ${esc(o.address)} | ${esc(o.phone)}</div></div>`).join('') : 'مفيش طلبات.') + '</div>';
+  $('#app').innerHTML = f + `<div class="panel"><h2>${me.role === 'admin' ? 'كل الطلبات' : 'طلباتي'}</h2>` + (orders.length ? orders.map(o => `<div class="ord"><div class="h"><b>طلب #${o.id}</b><span class="st ${stc(o.status)}">${esc(o.status)}</span></div>
+  <div class="small">${esc(o.username)} • ${new Date(o.date).toLocaleString('ar-EG')}</div>
+  <div style="margin:6px 0">${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div><div><b>${money(o.total)} ج.م</b> <span class="small">• ${esc(o.address)} • ${esc(o.phone)}</span></div></div>`).join('') : `<div class="empty"><div class="e">${ic('box', 56)}</div>مفيش طلبات لحد دلوقتي.</div>`) + '</div>';
 }
 let editing = null;
 async function adminView(f, tab) {
   if (!me || me.role !== 'admin') return go('login');
   const { orders } = await api('/api/orders'); const e = editing || {};
-  $('#app').innerHTML = f + `<div class="panel"><h2>${editing ? 'تعديل منتج' : 'إضافة منتج'}</h2><div id="m"></div>
+  const rev = orders.filter(o => o.status !== 'ملغي').reduce((s, o) => s + Number(o.total), 0);
+  $('#app').innerHTML = f + `<h2 style="margin:6px 0 14px;font-weight:800">لوحة التحكم</h2><div class="stats"><div class="stat"><span>المنتجات</span><b>${products.length}</b></div><div class="stat"><span>الطلبات</span><b>${orders.length}</b></div>
+  <div class="stat"><span>طلبات جديدة</span><b>${orders.filter(o => o.status === 'جديد').length}</b></div><div class="stat"><span>إجمالي المبيعات</span><b>${money(rev)} ج.م</b></div></div>
+  <div class="adm"><div class="panel"><h2>${editing ? 'تعديل منتج' : 'إضافة منتج'}</h2><div id="m"></div>
   <label>الاسم</label><input id="n" value="${esc(e.name)}"><label>السعر (ج.م)</label><input id="pr" type="number" min="0" step="0.01" value="${e.price ?? ''}">
-  <label>الكمية المتاحة</label><input id="st" type="number" min="0" value="${e.stock ?? ''}"><label>الوصف</label><textarea id="d">${esc(e.description)}</textarea>
+  <label>الكمية المتاحة</label><input id="st" type="number" min="0" value="${e.stock ?? ''}"><label>الوصف</label><textarea id="d" rows="3">${esc(e.description)}</textarea>
   <label>صورة المنتج (اختياري - ارفع صورة أو حط رابط)</label><input id="img" value="${esc(e.image && !e.image.startsWith('data:') ? e.image : '')}" placeholder="https://..."><input type="file" id="file" accept="image/*">
-  <div class="row"><button class="btn" onclick="saveProd()">${editing ? 'حفظ التعديل' : 'إضافة'}</button>${editing ? '<button class="btn gray" onclick="editing=null;go(\'admin\')">إلغاء</button>' : ''}</div></div>
-  <div class="panel"><h2>المنتجات (${products.length})</h2><table><tr><th>الاسم</th><th>السعر</th><th>الكمية</th><th></th></tr>${products.map(p => `<tr><td>${esc(p.name)}</td><td>${p.price}</td><td>${p.stock}</td>
-  <td class="row"><button class="btn gray" onclick="editProd(${p.id})">تعديل</button><button class="btn red" onclick="delProd(${p.id})">حذف</button></td></tr>`).join('')}</table></div>
-  <div class="panel"><h2>الطلبات (${orders.length})</h2>${orders.map(o => `<div class="panel" style="background:#f8fafc"><b>#${o.id}</b> ${esc(o.username)} - ${o.total} ج.م - ${esc(o.phone)} - ${esc(o.address)}<br>${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}
-  <select onchange="setStatus(${o.id},this.value)">${['جديد', 'تم الشحن', 'تم التسليم', 'ملغي'].map(s => `<option ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`).join('') || 'مفيش طلبات.'}</div>`;
+  <div class="row"><button class="btn" onclick="saveProd()">${editing ? 'حفظ التعديل' : '＋ إضافة المنتج'}</button>${editing ? '<button class="btn gray" onclick="editing=null;go(\'admin\')">إلغاء</button>' : ''}</div></div>
+  <div><div class="panel"><h2>المنتجات (${products.length})</h2>${products.map(p => `<div class="pr"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div><div><b>${esc(p.name)}</b><div class="sm">${money(p.price)} ج.م • الكمية ${p.stock}</div></div>
+  <div class="row"><button class="btn gray" onclick="editProd(${p.id})">تعديل</button><button class="btn red" onclick="delProd(${p.id})">حذف</button></div></div>`).join('') || '<div class="empty">لسه مفيش منتجات.</div>'}</div>
+  <div class="panel"><h2>الطلبات (${orders.length})</h2>${orders.map(o => `<div class="ord"><div class="h"><b>#${o.id} • ${esc(o.username)}</b><span class="st ${stc(o.status)}">${esc(o.status)}</span></div><div class="small">${money(o.total)} ج.م • ${esc(o.phone)} • ${esc(o.address)}</div><div>${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div>
+  <select onchange="setStatus(${o.id},this.value)">${['جديد', 'تم الشحن', 'تم التسليم', 'ملغي'].map(s => `<option ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`).join('') || '<div class="empty">مفيش طلبات.</div>'}</div></div></div>`;
 }
 function editProd(id) { editing = products.find(p => p.id === id); go('admin'); scrollTo(0, 0); }
 async function delProd(id) { if (!confirm('متأكد إنك عايز تحذف المنتج؟')) return; try { await api('/api/products/' + id, 'DELETE'); flash = msg('اتحذف ✓', 'ok'); } catch (e) { flash = msg(e.message); } go('admin'); }
