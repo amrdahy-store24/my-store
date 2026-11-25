@@ -93,6 +93,11 @@ async function api(req, res, url) {
   }
   let mr;
   if (m === 'GET' && p === '/api/users') { need(u, 'admin'); return send(res, 200, { users: db.users.filter(x => x.role === 'customer').map(x => ({ id: x.id, username: x.username, phone: x.phone || '', status: x.status || 'active', createdAt: x.createdAt || '', resetAt: x.resetAt || '' })).reverse() }); }
+  mr = /^\/api\/users\/(\d+)$/.exec(p);
+  if (m === 'DELETE' && mr) {
+    need(u, 'admin'); const i = db.users.findIndex(y => y.id == mr[1] && y.role === 'customer'); if (i < 0) throw new Err(404, 'العميل مش موجود');
+    const gone = db.users[i].id; db.users.splice(i, 1); for (const k of Object.keys(db.sessions)) if (db.sessions[k] === gone) delete db.sessions[k]; save(db); return send(res, 200, { ok: true });
+  }
   mr = /^\/api\/users\/(\d+)\/reset$/.exec(p);
   if (m === 'POST' && mr) {
     need(u, 'admin'); const x = db.users.find(y => y.id == mr[1] && y.role === 'customer'); if (!x) throw new Err(404, 'العميل مش موجود');
