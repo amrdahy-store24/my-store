@@ -156,7 +156,7 @@ async function adminView(f, tab) {
   <label>القسم</label><input id="cg" list="cgl" value="${esc(e.category)}" placeholder="اختار قسم أو اكتب قسم جديد"><datalist id="cgl">${catList().map(c => `<option value="${esc(c)}">`).join('')}</datalist><label>الكمية المتاحة</label><input id="st" type="number" min="0" value="${e.stock ?? ''}"><label>الوصف</label><textarea id="d" rows="3">${esc(e.description)}</textarea>
   <label>صورة المنتج (اختياري - ارفع صورة أو حط رابط)</label><input id="img" value="${esc(e.image && !e.image.startsWith('data:') ? e.image : '')}" placeholder="https://..."><input type="file" id="file" accept="image/*">
   <div class="row"><button class="btn" onclick="saveProd()">${editing ? 'حفظ التعديل' : '＋ إضافة المنتج'}</button>${editing ? '<button class="btn gray" onclick="editing=null;go(\'admin\')">إلغاء</button>' : ''}</div></div>
-  <div><div class="panel"><h2>كارت العروض (أعلى الصفحة الرئيسية)</h2><div id="om"></div>
+  <div><div class="panel"><h2>شريط العروض المتحرك (أعلى الصفحة الرئيسية)</h2><div id="om"></div>
   <label class="chk"><input type="checkbox" id="on" ${offer && offer.on ? 'checked' : ''}> ظاهر في الصفحة الرئيسية</label>
   <label>عنوان صغير قبل كل عرض (اختياري، مثلاً: عرض)</label><input id="ot" value="${esc(offer && offer.title)}"><label>نص العروض (كل سطر عرض منفصل في الشريط المتحرك)</label><textarea id="ox" rows="4">${esc(offer && offer.text)}</textarea>
   
