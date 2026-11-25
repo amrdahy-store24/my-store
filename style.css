@@ -151,3 +151,16 @@ html[data-theme=dark] .top{background:rgba(6,9,20,.92)}html[data-theme=dark] .fo
 html[data-theme=dark] .card .tag.out{background:#3a1420}
 .tg{background:rgba(255,255,255,.1);color:#fff;border:0;width:40px;height:40px;border-radius:12px;cursor:pointer;display:grid;place-items:center;flex:none;margin-inline-start:6px}.tg:hover{background:rgba(255,255,255,.18)}
 .bar .rt{display:flex;align-items:center;gap:6px}
+
+/* ticker */
+.ticker{overflow:hidden;direction:ltr;margin-bottom:14px;border-radius:14px;background:linear-gradient(90deg,#b45309,#f59e0b 55%,#fb7185);color:#fff;box-shadow:var(--sh)}
+.ticker .tk{display:flex;width:max-content;animation:tkmove 40s linear infinite}
+.ticker:hover .tk,.ticker.hold .tk,.ticker:focus-within .tk{animation-play-state:paused}
+.ticker .th{display:flex;flex:none}
+.ticker .ti{display:inline-flex;align-items:center;gap:10px;padding:12px 28px;white-space:nowrap;direction:rtl;font-weight:700;font-size:16px}
+.ticker .ti::after{content:"●";opacity:.55;font-size:9px;margin-inline-start:28px}
+.ticker .tl{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.22);padding:3px 11px;border-radius:99px;font-size:13px}
+@keyframes tkmove{from{transform:translateX(-50%)}to{transform:translateX(0)}}
+@media(prefers-reduced-motion:reduce){.ticker{overflow-x:auto}.ticker .tk{animation:none}.ticker .th[aria-hidden]{display:none}}
+html[data-theme=dark] .ticker{background:linear-gradient(90deg,#7c3a07,#b86f0a 55%,#9f2f45)}
+@media(max-width:560px){.ticker .ti{padding:10px 20px;font-size:14px}}

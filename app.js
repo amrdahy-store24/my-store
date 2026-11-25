@@ -43,8 +43,15 @@ function setCat(c) { cat = c; document.querySelectorAll('.chip').forEach(x => x.
 const cats = () => [...new Set(products.map(p => p.category).filter(Boolean))];
 const catList = () => [...new Set(['إلكترونيات', 'ملابس', 'أدوات منزلية', 'إكسسوارات', ...products.map(p => p.category).filter(Boolean)])];
 function offerCard() {
-  if (!offer || !offer.on || !(offer.title || offer.text)) return '';
-  return `<section class="offer"${offer.image ? ` style="background-image:linear-gradient(90deg,rgba(15,23,42,.88),rgba(15,23,42,.45)),url('${esc(offer.image)}')"` : ''}><span class="pill">${ic('spark', 14)} عرض</span><h3>${esc(offer.title)}</h3><p>${esc(offer.text)}</p><button class="cta" onclick="document.getElementById('prods').scrollIntoView({behavior:'smooth'})">تسوّق العرض ←</button></section>`;
+  if (!offer || !offer.on) return '';
+  const items = String(offer.text || '').split('\n').map(s => s.trim()).filter(Boolean);
+  if (!items.length) return '';
+  const lab = offer.title ? `<b class="tl">${ic('spark', 14)} ${esc(offer.title)}</b>` : '';
+  const one = items.map(t => `<span class="ti">${lab}<span>${esc(t)}</span></span>`).join('');
+  const half = one.repeat(Math.max(2, Math.ceil(6 / items.length)));
+  const chars = items.join('').length * Math.max(2, Math.ceil(6 / items.length));
+  const dur = Math.max(25, Math.round(chars * 0.3));
+  return `<section class="ticker" aria-label="العروض" ontouchstart="this.classList.add('hold')" ontouchend="setTimeout(()=>this.classList.remove('hold'),1500)"><div class="tk" style="animation-duration:${dur}s"><div class="th">${half}</div><div class="th" aria-hidden="true">${half}</div></div></section>`;
 }
 function shop(f) {
   cat = ''; $('#app').innerHTML = f + offerCard() + `<section class="hero"><span class="pill">● تشكيلة جديدة وصلت</span><h2>تسوّق <em>أحلى المنتجات</em><br>بسعر وجودة تستاهلها</h2><p>اختار اللي يعجبك، اطلب في دقيقة، والدفع عند الاستلام لحد باب بيتك.</p>
@@ -151,8 +158,8 @@ async function adminView(f, tab) {
   <div class="row"><button class="btn" onclick="saveProd()">${editing ? 'حفظ التعديل' : '＋ إضافة المنتج'}</button>${editing ? '<button class="btn gray" onclick="editing=null;go(\'admin\')">إلغاء</button>' : ''}</div></div>
   <div><div class="panel"><h2>كارت العروض (أعلى الصفحة الرئيسية)</h2><div id="om"></div>
   <label class="chk"><input type="checkbox" id="on" ${offer && offer.on ? 'checked' : ''}> ظاهر في الصفحة الرئيسية</label>
-  <label>عنوان العرض</label><input id="ot" value="${esc(offer && offer.title)}"><label>نص العرض</label><textarea id="ox" rows="2">${esc(offer && offer.text)}</textarea>
-  <label>صورة خلفية (اختياري - رابط أو ارفع صورة)</label><input id="oi" value="${esc(offer && offer.image && !offer.image.startsWith('data:') ? offer.image : '')}" placeholder="https://..."><input type="file" id="of" accept="image/*">
+  <label>عنوان صغير قبل كل عرض (اختياري، مثلاً: عرض)</label><input id="ot" value="${esc(offer && offer.title)}"><label>نص العروض (كل سطر عرض منفصل في الشريط المتحرك)</label><textarea id="ox" rows="4">${esc(offer && offer.text)}</textarea>
+  
   <button class="btn" onclick="saveOffer()">حفظ العرض</button></div>
   <div class="panel"><h2>المنتجات (${products.length})</h2>${products.map(p => `<div class="pr"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div><div><b>${esc(p.name)}</b><div class="sm">${money(p.price)} ج.م • الكمية ${p.stock}</div></div>
   <div class="row"><button class="btn gray" onclick="editProd(${p.id})">تعديل</button><button class="btn red" onclick="delProd(${p.id})">حذف</button></div></div>`).join('') || '<div class="empty">لسه مفيش منتجات.</div>'}</div>
@@ -162,8 +169,7 @@ async function adminView(f, tab) {
   <select onchange="setStatus(${o.id},this.value)">${['جديد', 'تم الشحن', 'تم التسليم', 'ملغي'].map(s => `<option ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`).join('') || '<div class="empty">مفيش طلبات.</div>'}</div></div></div>`;
 }
 async function saveOffer() {
-  try { let image = $('#oi').value.trim(); const file = $('#of').files[0];
-    if (file) image = await readFile(file); else if (!image && offer && offer.image && offer.image.startsWith('data:')) image = offer.image;
+  try { const image = '';
     await api('/api/offer', 'PUT', { on: $('#on').checked, title: $('#ot').value, text: $('#ox').value, image }); flash = msg('اتحفظ العرض ✓', 'ok'); go('admin');
   } catch (e) { $('#om').innerHTML = msg(e.message); }
 }
