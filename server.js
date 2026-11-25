@@ -4,6 +4,8 @@ const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, 'data.json');
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin123';
+// رقم واتساب صاحب المتجر (بصيغة دولية بدون + ). غيّره من هنا أو من متغير OWNER_WHATSAPP في Render
+const OWNER_WHATSAPP = process.env.OWNER_WHATSAPP || '201558221315';
 
 function hash(pw, salt) { return crypto.scryptSync(pw, salt, 32).toString('hex'); }
 function load(stored) {
@@ -41,7 +43,7 @@ function getUser(req) {
   const id = m && sessions.get(m[1]);
   return id ? db.users.find(u => u.id === id) : null;
 }
-const pub = u => u && { id: u.id, username: u.username, role: u.role };
+const pub = u => u && { id: u.id, username: u.username, role: u.role, status: u.status || 'active', phone: u.phone || '' };
 function normPhone(v) { let x = String(v || '').replace(/[\s\-()]/g, '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)); if (x.startsWith('+20')) x = '0' + x.slice(3); else if (x.startsWith('0020')) x = '0' + x.slice(4); return /^01[0125]\d{8}$/.test(x) ? x : ''; }
 class Err extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 function need(u, role) { if (!u) throw new Err(401, 'سجّل دخولك الأول'); if (role && u.role !== role) throw new Err(403, 'غير مسموح'); }
@@ -67,7 +69,7 @@ async function api(req, res, url) {
     const phone = normPhone(b.phone); if (!phone) throw new Err(400, 'اكتب رقم موبايل مصري صحيح (مثال 01012345678)');
     if (db.users.some(x => x.phone === phone)) throw new Err(409, 'الرقم ده مسجل بحساب تاني');
     const salt = crypto.randomBytes(16).toString('hex');
-    const nu = { id: db.nextId++, username, salt, hash: hash(pw, salt), role: 'customer', phone, createdAt: new Date().toISOString() };
+    const nu = { id: db.nextId++, username, salt, hash: hash(pw, salt), role: 'customer', phone, status: 'pending', createdAt: new Date().toISOString() };
     db.users.push(nu); save(db);
     return login(res, nu);
   }
@@ -89,8 +91,9 @@ async function api(req, res, url) {
     if (np.length < 6) throw new Err(400, 'الباسورد الجديد لازم 6 حروف على الأقل');
     u.salt = crypto.randomBytes(16).toString('hex'); u.hash = hash(np, u.salt); save(db); return send(res, 200, { ok: true });
   }
-  if (m === 'GET' && p === '/api/users') { need(u, 'admin'); return send(res, 200, { users: db.users.filter(x => x.role === 'customer').map(x => ({ id: x.id, username: x.username, phone: x.phone || '', createdAt: x.createdAt || '', resetAt: x.resetAt || '' })).reverse() }); }
-  let mr = /^\/api\/users\/(\d+)\/reset$/.exec(p);
+  let mr;
+  if (m === 'GET' && p === '/api/users') { need(u, 'admin'); return send(res, 200, { users: db.users.filter(x => x.role === 'customer').map(x => ({ id: x.id, username: x.username, phone: x.phone || '', status: x.status || 'active', createdAt: x.createdAt || '', resetAt: x.resetAt || '' })).reverse() }); }
+  mr = /^\/api\/users\/(\d+)\/reset$/.exec(p);
   if (m === 'POST' && mr) {
     need(u, 'admin'); const x = db.users.find(y => y.id == mr[1] && y.role === 'customer'); if (!x) throw new Err(404, 'العميل مش موجود');
     const al = 'abcdefghjkmnpqrstuvwxyz23456789'; let t = ''; for (const by of crypto.randomBytes(8)) t += al[by % al.length];
@@ -99,6 +102,12 @@ async function api(req, res, url) {
   if (m === 'POST' && p === '/api/logout') {
     const mm = /sid=([a-f0-9]+)/.exec(req.headers.cookie || ''); if (mm) sessions.delete(mm[1]);
     return send(res, 200, { ok: true }, { 'Set-Cookie': 'sid=; Path=/; Max-Age=0' });
+  }
+  if (m === 'GET' && p === '/api/config') return send(res, 200, { ownerWhatsapp: OWNER_WHATSAPP });
+  mr = /^\/api\/users\/(\d+)\/status$/.exec(p);
+  if (m === 'POST' && mr) {
+    need(u, 'admin'); const b = await body(req), x = db.users.find(y => y.id == mr[1] && y.role === 'customer'); if (!x) throw new Err(404, 'العميل مش موجود');
+    if (!['active', 'pending', 'rejected'].includes(b.status)) throw new Err(400, 'حالة غير صحيحة'); x.status = b.status; save(db); return send(res, 200, { ok: true });
   }
   if (m === 'GET' && p === '/api/me') return send(res, 200, { user: pub(u) });
   if (m === 'GET' && p === '/api/products') return send(res, 200, { products: db.products });
@@ -115,7 +124,8 @@ async function api(req, res, url) {
     if (db.products.length === n) throw new Err(404, 'المنتج مش موجود'); save(db); return send(res, 200, { ok: true });
   }
   if (m === 'POST' && p === '/api/orders') {
-    need(u); const b = await body(req); const items = [];
+    need(u); if ((u.status || 'active') !== 'active') throw new Err(403, 'حسابك لسه مش مفعل، كلّم صاحب المتجر على واتساب عشان يتفعل');
+    const b = await body(req); const items = [];
     if (!Array.isArray(b.items) || !b.items.length) throw new Err(400, 'السلة فاضية');
     for (const it of b.items) {
       const pr = db.products.find(x => x.id === it.id), q = parseInt(it.qty, 10);
