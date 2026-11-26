@@ -169,7 +169,8 @@ async function api(req, res, url) {
     const b = await body(req); checkCaptcha(b); const username = String(b.username || '').trim().toLowerCase(), pw = String(b.password || '');
     if (!/^[a-z0-9_.]{3,20}$/.test(username)) throw new Err(400, 'اليوزر 3-20 حرف إنجليزي أو أرقام أو _ .');
     if (pw.length < 6) throw new Err(400, 'الباسورد لازم 6 حروف على الأقل');
-    if (db.users.some(x => x.username === username)) throw new Err(409, 'اليوزر ده مستخدم، اختار غيره');
+    if (normPhone(username)) throw new Err(400, 'اليوزر مينفعش يبقى رقم موبايل');
+    if (db.users.some(x => x.role === 'admin' && x.username === username)) throw new Err(409, 'اليوزر ده مستخدم، اختار غيره');
     const country = cc(b.country); if (!country) throw new Err(400, 'اختار الدولة');
     const phone = normPhone(b.phone); if (!phone || (country === 'EG') !== !phone.startsWith('+')) throw new Err(400, country === 'EG' ? 'اكتب رقم موبايل مصري صحيح (مثال 01012345678)' : 'اكتب رقمك بالصيغة الدولية، مثال +966501234567');
     if (db.users.some(x => x.phone === phone)) throw new Err(409, 'الرقم ده مسجل بحساب تاني');
@@ -180,14 +181,16 @@ async function api(req, res, url) {
   }
   if (m === 'POST' && p === '/api/login') {
     const b = await body(req); checkCaptcha(b); const username = String(b.username || '').trim().toLowerCase();
-    const x = db.users.find(y => y.username === username);
-    if (!x || !crypto.timingSafeEqual(Buffer.from(hash(String(b.password || ''), x.salt), 'hex'), Buffer.from(x.hash, 'hex')))
-      throw new Err(401, 'اليوزر أو الباسورد غلط');
-    return login(res, x);
+    const ph = normPhone(username), pw = String(b.password || '');
+    const cands = ph ? db.users.filter(y => y.phone === ph) : db.users.filter(y => y.username === username);
+    const ok = cands.filter(y => crypto.timingSafeEqual(Buffer.from(hash(pw, y.salt), 'hex'), Buffer.from(y.hash, 'hex')));
+    if (!ok.length) throw new Err(401, 'اليوزر أو الباسورد غلط');
+    if (ok.length > 1) throw new Err(409, 'في أكتر من حساب بنفس الاسم والباسورد، سجّل دخول برقم الموبايل بدل الاسم');
+    return login(res, ok[0]);
   }
   if (m === 'POST' && p === '/api/forgot') {
-    const b = await body(req); checkCaptcha(b); const x = db.users.find(y => y.username === String(b.username || '').trim().toLowerCase()), ph = normPhone(b.phone);
-    if (x && x.role === 'customer' && x.phone && ph && x.phone === ph) { x.resetAt = new Date().toISOString(); save(db); }
+    const b = await body(req); checkCaptcha(b); const un = String(b.username || '').trim().toLowerCase(), ph = normPhone(b.phone), x = ph ? db.users.find(y => y.role === 'customer' && y.username === un && y.phone === ph) : null;
+    if (x) { x.resetAt = new Date().toISOString(); save(db); }
     return send(res, 200, { ok: true });
   }
   if (m === 'POST' && p === '/api/password') {
