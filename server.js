@@ -204,7 +204,8 @@ async function api(req, res, url) {
   if (m === 'POST' && p === '/api/chat/ask') {
     const b = await body(req), q = String(b.q || '').trim().slice(0, 300); if (!q) throw new Err(400, 'اكتب سؤالك');
     if (!AI_KEY) return send(res, 200, { fallback: true });
-    const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    if (/\d[\d\s\-.]{5,}\d|@|https?:\/\/|password|passwd|cvv|otp|باسورد|كلمة\s*(ال)?(سر|مرور)|(رقم|كود)\s*(الكارت|البطاقة|الفيزا|التحقق)|#\s?\d+|(order|طلب|اوردر|أوردر)\s*(id|no\.?|number|رقم|#)?\s*\d+/i.test(q)) return send(res, 200, { fallback: true, sensitive: true });
+    const ip = String(req.headers['cf-connecting-ip'] || req.headers['true-client-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
     if (!aiAllow(ip)) return send(res, 200, { fallback: true, limited: true });
     try { return send(res, 200, { answer: await aiAnswer(q, b.h) }); } catch (e) { console.log('ai error', e.message); return send(res, 200, { fallback: true }); }
   }

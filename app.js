@@ -252,8 +252,11 @@ async function chOrderStatus() {
     chAdd('bot', esc(chL(`آخر طلب ليك رقم #${o.id}${dt ? ' بتاريخ ' + dt : ''}: الحالة «${o.status}»، الإجمالي ${money(o.total)} ج.م.`, `Your latest order #${o.id}${dt ? ' on ' + dt : ''}: status "${o.status}", total ${money(o.total)} EGP.`)) + `<br><a class="cl" onclick="chClose();go('orders')">${esc(chL('كل طلباتي', 'All my orders'))}</a>`);
   } catch { chAdd('bot', esc(chL('معرفتش أجيب الطلبات دلوقتي، جرب تاني.', 'Could not load your orders, try again.'))); }
 }
+const chSens = t => /\d[\d\s\-.]{5,}\d|@|https?:\/\/|password|passwd|cvv|otp|باسورد|كلمة\s*(ال)?(سر|مرور)|(رقم|كود)\s*(الكارت|البطاقة|الفيزا|التحقق)|#\s?\d+|(order|طلب|اوردر|أوردر)\s*(id|no\.?|number|رقم|#)?\s*\d+/i.test(t);
 async function chAsk(text, id) {
-  text = String(text || '').trim(); if (!text) return; CH.last = text; await chLoad();
+  text = String(text || '').trim(); if (!text) return; await chLoad();
+  if (!id && chSens(text)) { CH.last = ''; chAdd('me', '•••'); return chAdd('bot', esc(chL('لحمايتك، متكتبش أرقام تليفون أو عناوين أو بيانات دفع أو أرقام طلبات أو كلمات سر هنا. اسأل سؤالك من غيرها، أو كلّم حد من الفريق على واتساب.', 'For your safety, please do not type phone numbers, addresses, payment details, order numbers or passwords here. Ask without them, or talk to our team on WhatsApp.')) + chHuman('', true)); }
+  CH.last = text;
   chAdd('me', esc(text)); if (id === 'status' || /(حاله|حالة|فين).*(طلب|اوردر)|(طلبي|اوردري)|order status|my order|track/i.test(chNorm(text) + ' ' + text)) return chOrderStatus();
   if (!id && CH.ai) { CH.log.push({ who: 'bot', html: '<i>' + esc(chL('بكتب...', 'Typing...')) + '</i>' }); chPaint(); let ans = null; try { const r = await api('/api/chat/ask', 'POST', { q: text, h: CH.hist.slice(-4) }); ans = r.answer || null; } catch {} CH.log.pop();
     if (ans) { CH.hist.push({ r: 'user', t: text }, { r: 'assistant', t: ans }); return chAdd('bot', esc(ans).replace(/\n/g, '<br>') + `<div class="cn">${esc(chL('رد آلي، للتأكيد كلّم حد من الفريق.', 'Automated reply. Confirm with our team if needed.'))}</div>` + chHuman(text)); } }
@@ -269,6 +272,7 @@ async function chOpen() {
   if (!CH.log.length) CH.log.push({ who: 'bot', html: esc(chL('أهلاً بيك في تِكمو 👋 اسألني عن الطلب أو الدفع أو التوصيل، أو اختار من الأسئلة السريعة.', 'Welcome to Tekmoo 👋 Ask about ordering, payment or delivery, or pick a quick question.')) });
   p = document.createElement('div'); p.id = 'chpanel'; p.setAttribute('role', 'dialog'); p.setAttribute('dir', LANG === 'en' ? 'ltr' : 'rtl');
   p.innerHTML = `<div class="chh"><b>${esc(chL('مساعد تِكمو', 'Tekmoo assistant'))}</b><button onclick="chClose()" aria-label="close">✕</button></div><div id="chlog"></div><div class="chq">${chChips()}</div>
+  ${CH.ai ? `<div class="chw">${esc(chL('ردود آلية بالذكاء الاصطناعي. متكتبش كلمات سر أو أرقام تليفون أو بيانات دفع أو أرقام طلبات.', 'AI-generated replies. Do not enter passwords, phone numbers, payment details or order numbers.'))}</div>` : ''}
   <div class="chf"><input id="chin" maxlength="200" autocomplete="off" placeholder="${esc(chL('اكتب سؤالك...', 'Type your question...'))}" onkeydown="if(event.key==='Enter')chSend()"><button class="chs" onclick="chSend()" aria-label="send">➤</button></div>
   <a class="chp" href="${chWa(CH.last)}" target="_blank" rel="noopener" onclick="this.href=chWa(CH.last)">${esc(chL('كلّم حد على واتساب', 'Talk to a person on WhatsApp'))}</a>`;
   document.body.appendChild(p); chPaint(); const b = $('#chbtn'); if (b) b.classList.add('on');

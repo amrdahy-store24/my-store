@@ -223,3 +223,5 @@ html[dir=ltr] .narrow .alt,html[dir=ltr] .narrow h2,html[dir=ltr] .narrow>p{text
 #chpanel .chp{display:block;text-align:center;padding:11px;background:#16a34a;color:#fff;font-weight:800;font-size:14px;text-decoration:none}
 @media(max-width:760px){#chbtn{bottom:84px;left:12px;width:52px;height:52px}#chpanel{left:8px;right:8px;width:auto;max-width:none;bottom:8px;height:calc(100vh - 90px);max-height:560px;z-index:80}}
 .cn{font-size:11px;color:var(--mut);margin-top:4px}
+
+.chw{font-size:11px;line-height:1.5;padding:6px 12px;color:var(--muted,#888);border-top:1px solid var(--line,rgba(128,128,128,.2))}
