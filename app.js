@@ -3,7 +3,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 let me = null, offer = null, cat = '', products = [], cart = JSON.parse(localStorage.getItem('cart') || '[]'), flash = '';
 async function api(url, method = 'GET', data) {
   const r = await fetch(url, { method, headers: data ? { 'Content-Type': 'application/json' } : {}, body: data ? JSON.stringify(data) : undefined });
-  const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'حصل خطأ'); return j;
+  const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error(j.error || 'حصل خطأ'); e.capReq = !!j.captchaRequired; throw e; } return j;
 }
 const saveCart = () => localStorage.setItem('cart', JSON.stringify(cart));
 const cartCount = () => cart.reduce((s, i) => s + i.qty, 0);
@@ -164,12 +164,13 @@ async function loadCap() { const el = document.getElementById('cap'); if (!el) r
 function authView(v, f) {
   const reg = v === 'register'; if (!reg) setTimeout(() => pkAvail().then(ok => { const b = $('#pkb'); if (b && ok) b.style.display = ''; }), 0);
   $('#app').innerHTML = `<div class="panel narrow"><div class="ai">${WM('big')}</div><h2>${reg ? 'إنشاء حساب جديد' : 'أهلاً بيك تاني'}</h2><p class="small" style="margin-top:-8px">${reg ? 'سجّل في ثواني وابدأ اطلب' : 'سجّل دخولك عشان تكمل طلباتك'}</p>${f}<div id="m"></div><label>${reg ? 'اسم المستخدم' : 'اسم المستخدم أو رقم الموبايل'}</label><input id="u" autocomplete="username" autocapitalize="none">
-  ${reg ? `<label>الدولة</label><select id="cn" onchange="regCountry(this.value)">${cOpts(COUNTRY)}</select><label>رقم الموبايل</label><input id="ph" inputmode="tel" autocomplete="tel" dir="ltr" style="text-align:right" placeholder="${COUNTRY === 'EG' ? '01xxxxxxxxx' : '+9665xxxxxxxx'}">` : ''}<label>الباسورد</label><input id="p" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}"><label>كود التحقق (عشان نتأكد إنك مش روبوت)</label><div class="cap" id="cap"></div><input id="cp" onkeydown="if(event.key==='Enter')auth(\'${v}\')" autocomplete="off" autocapitalize="characters" maxlength="8" placeholder="اكتب الحروف اللي في الصورة" dir="ltr" style="text-align:center;letter-spacing:3px">
+  ${reg ? `<label>الدولة</label><select id="cn" onchange="regCountry(this.value)">${cOpts(COUNTRY)}</select><label>رقم الموبايل</label><input id="ph" inputmode="tel" autocomplete="tel" dir="ltr" style="text-align:right" placeholder="${COUNTRY === 'EG' ? '01xxxxxxxxx' : '+9665xxxxxxxx'}">` : ''}<label>الباسورد</label><input id="p" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}"><div id="capw" ${reg ? '' : 'style="display:none"'}><label>كود التحقق (عشان نتأكد إنك مش روبوت)</label><div class="cap" id="cap"></div><input id="cp" onkeydown="if(event.key==='Enter')auth(\'${v}\')" autocomplete="off" autocapitalize="characters" maxlength="8" placeholder="اكتب الحروف اللي في الصورة" dir="ltr" style="text-align:center;letter-spacing:3px"></div>
+  ${reg ? '' : '<label class="rmb"><input type="checkbox" id="rm"><span>تذكرني</span></label>'}
   ${reg ? '' : '<button class="btn wide ghost" id="pkb" style="display:none;margin-bottom:8px" onclick="pkLogin()">🔐 الدخول بالبصمة (من غير كود تحقق)</button>'}
   <button class="btn wide" onclick="auth('${v}')">${reg ? 'إنشاء الحساب' : 'دخول'}</button>
   ${reg ? '' : '<div class="alt" style="margin-top:10px"><a onclick="go(\'forgot\')">نسيت الباسورد؟</a></div>'}
   <div class="alt">${reg ? 'عندك حساب؟ <a onclick="go(\'login\')">سجّل دخول</a>' : 'مش عندك حساب؟ <a onclick="go(\'register\')">أنشئ حساب</a>'}</div></div>`;
-  loadCap();
+  if (reg) loadCap(); else { try { const ru = localStorage.getItem('ru'); if (ru) { $('#u').value = ru; $('#rm').checked = true; setTimeout(() => $('#p') && $('#p').focus(), 50); } } catch {} }
 }
 const pkB = b => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), pkU = s => { s = s.replace(/-/g, '+').replace(/_/g, '/'); s += '==='.slice((s.length + 3) % 4); return Uint8Array.from(atob(s), c => c.charCodeAt(0)).buffer; };
 const pkAvail = async () => { try { return !!(window.PublicKeyCredential && navigator.credentials && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch { return false; } };
@@ -203,8 +204,8 @@ async function pkPanel() {
   app.appendChild(d);
 }
 async function auth(v) {
-  try { const r = await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value, phone: v === 'register' ? $('#ph').value : undefined, country: v === 'register' ? $('#cn').value : undefined, captcha: $('#cp').value, captchaToken: window.capTok }); await afterLogin(r.user); }
-  catch (e) { $('#m').innerHTML = msg(e.message); loadCap(); }
+  try { const r = await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value, phone: v === 'register' ? $('#ph').value : undefined, country: v === 'register' ? $('#cn').value : undefined, captcha: $('#cp').value, captchaToken: window.capTok }); try { if (v === 'login') { const rm = $('#rm'); if (rm && rm.checked) localStorage.setItem('ru', $('#u').value.trim()); else localStorage.removeItem('ru'); } } catch {} await afterLogin(r.user); }
+  catch (e) { $('#m').innerHTML = msg(e.message); const w = $('#capw'); if (e.capReq && w) w.style.display = ''; if (v === 'register' || (w && w.style.display !== 'none')) loadCap(); }
 }
 function forgotView(f) {
   $('#app').innerHTML = `<div class="panel narrow"><div class="ai">${ic('lock', 30)}</div><h2>نسيت الباسورد؟</h2><p class="small" style="margin-top:-8px">اكتب اسم المستخدم ورقم الموبايل اللي سجلت بيه، وهنبعتلك باسورد مؤقت على الواتساب.</p>${f}<div id="m"></div>

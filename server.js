@@ -45,6 +45,7 @@ function sweepSessions() {
   const at = db.sessionAt = db.sessionAt || {}, now = Date.now(); let n = 0;
   for (const t of Object.keys(db.sessions)) { if (!at[t]) at[t] = now; if (now - at[t] > SESS_MS) { delete db.sessions[t]; delete at[t]; n++; } }
   for (const t of Object.keys(at)) if (!(t in db.sessions)) delete at[t];
+  for (const [k, v] of fails) if (v.t < now) fails.delete(k);
   if (n) { console.log('expired sessions removed:', n); saveSoon(); }
 }
 process.on('uncaughtException', e => console.error('uncaught', e && e.stack || e));
@@ -175,6 +176,11 @@ function makeCaptcha() {
   const id = crypto.randomBytes(8).toString('hex'), exp = Date.now() + 5 * 60000;
   return { token: id + '.' + exp + '.' + capSig(id, exp, ans), svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 60" width="180" height="60"><rect width="180" height="60" rx="8" fill="#f3f4f8"/>${n}${g}</svg>` };
 }
+// login throttling: no captcha on a normal login; captcha is required after repeated failures
+const fails = new Map(), hits = new Map(), FAIL_MS = 15 * 60000;
+function failCount(k) { const f = fails.get(k); if (!f) return 0; if (f.t < Date.now()) { fails.delete(k); return 0; } return f.n; }
+function addFail(k) { const f = fails.get(k); fails.set(k, { n: (f && f.t >= Date.now() ? f.n : 0) + 1, t: Date.now() + FAIL_MS }); }
+function loginRate(ip) { const now = Date.now(); let h = hits.get(ip); if (!h || h.t < now) h = { n: 0, t: now + 60000 }; h.n++; hits.set(ip, h); if (hits.size > 5000) for (const [k, v] of hits) if (v.t < now) hits.delete(k); return h.n <= 40; }
 function checkCaptcha(b) {
   const [id, exp, sig] = String(b.captchaToken || '').split('.'), ans = String(b.captcha || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   for (const [k, v] of capUsed) if (v < Date.now()) capUsed.delete(k);
@@ -204,11 +210,21 @@ async function api(req, res, url) {
     return login(res, nu);
   }
   if (m === 'POST' && p === '/api/login') {
-    const b = await body(req); checkCaptcha(b); const username = String(b.username || '').trim().toLowerCase();
+    const b = await body(req); const username = String(b.username || '').trim().toLowerCase();
+    const ip = String(req.headers['cf-connecting-ip'] || req.headers['true-client-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+    if (!loginRate(ip)) throw new Err(429, 'محاولات كتير، استنى شوية وجرّب تاني');
     const ph = normPhone(username), pw = String(b.password || '');
     const cands = ph ? db.users.filter(y => y.phone === ph) : db.users.filter(y => y.username === username);
+    const ak = 'a:' + (ph || username), ik = 'i:' + ip;
+    if (failCount(ak) >= 30) throw new Err(429, 'محاولات غلط كتير على الحساب ده، استنى 15 دقيقة وجرّب تاني');
+    const needCap = cands.some(y => y.role === 'admin') || failCount(ak) >= 3 || failCount(ik) >= 5;
+    if (needCap) {
+      if (!b.captchaToken || !String(b.captcha || '').trim()) return send(res, 428, { error: 'اكتب كود التحقق اللي في الصورة وجرّب تاني', captchaRequired: true });
+      try { checkCaptcha(b); } catch (e) { addFail(ak); addFail(ik); e.captchaRequired = true; throw e; }
+    }
     const hs = await Promise.all(cands.slice(0, 20).map(y => hashA(pw, y.salt))); const ok = cands.slice(0, 20).filter((y, i) => crypto.timingSafeEqual(Buffer.from(hs[i], 'hex'), Buffer.from(y.hash, 'hex')));
-    if (!ok.length) throw new Err(401, 'اليوزر أو الباسورد غلط');
+    if (!ok.length) { addFail(ak); addFail(ik); const er = new Err(401, 'اليوزر أو الباسورد غلط'); if (failCount(ak) >= 3 || failCount(ik) >= 5) er.captchaRequired = true; throw er; }
+    fails.delete(ak);
     if (ok.length > 1) throw new Err(409, 'في أكتر من حساب بنفس الاسم والباسورد، سجّل دخول برقم الموبايل بدل الاسم');
     if (ok[0].role === 'admin' && (ok[0].passkeys || []).length && !pkOff()) throw new Err(403, 'حساب الأدمن بيدخل بالبصمة بس. استخدم زرار الدخول بالبصمة.');
     return login(res, ok[0]);
@@ -420,7 +436,7 @@ function start() { http.createServer(async (req, res) => {
     if (!fs.existsSync(fp)) { res.writeHead(404); return res.end('404'); }
     const ext = path.extname(fp), versioned = url.searchParams.has('v') && ext !== '.html';
     res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=86400' }); fs.createReadStream(fp).pipe(res);
-  } catch (e) { send(res, e.code || 500, { error: e.code ? e.message : 'حصل خطأ في السيرفر' }); }
+  } catch (e) { send(res, e.code || 500, { error: e.code ? e.message : 'حصل خطأ في السيرفر', ...(e.captchaRequired ? { captchaRequired: true } : {}) }); }
 }).listen(PORT, () => console.log(`المتجر شغال على http://localhost:${PORT}`)); }
 (async () => {
   let stored = null;
