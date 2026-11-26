@@ -94,7 +94,7 @@ function sliderHtml() {
   return `<div class="slider" role="region" aria-roledescription="carousel" aria-label="العروض" onmouseenter="this.classList.add('pz')" onmouseleave="this.classList.remove('pz')" onfocusin="this.classList.add('pz')" onfocusout="this.classList.remove('pz')" ontouchstart="slX=event.touches[0].clientX;this.classList.add('pz')" ontouchend="const d=event.changedTouches[0].clientX-slX;if(Math.abs(d)>40)slGo(slI+(d<0?1:-1));setTimeout(()=>this.classList.remove('pz'),3000)"><div class="sl">${hero}${offs}</div><button class="arr nx" aria-label="السابق" onclick="slGo(slI-1)">${'›'}</button><button class="arr pv" aria-label="التالي" onclick="slGo(slI+1)">${'‹'}</button><div class="dots">${Array.from({ length: n }, (_, j) => `<button class="dot${j ? '' : ' on'}" aria-label="شريحة ${j + 1}" onclick="slGo(${j})"></button>`).join('')}</div></div>`;
 }
 function shop(f) {
-  cat = ''; slI = 0; setTimeout(slStart, 0); $('#app').innerHTML = f + sliderHtml() + `<div class="perks"><div class="perk"><i>${ic('truck', 24)}</i><div><b>توصيل سريع</b><span>لحد باب البيت</span></div></div><div class="perk"><i>${ic('cash', 24)}</i><div><b>الدفع عند الاستلام</b><span>ادفع وانت بتستلم</span></div></div><div class="perk"><i>${ic('shield', 24)}</i><div><b>جودة مضمونة</b><span>منتجات مختارة بعناية</span></div></div></div>
+  cat = ''; slI = 0; setTimeout(slStart, 0); $('#app').innerHTML = f + sliderHtml() + `<div class="perks">${['truck', 'cash', 'shield'].map(k => `<button class="perk" onclick="perkOpen('${k}',this)" aria-haspopup="dialog"><i>${ic(PK[k].i, 26)}</i><b>${chL(PK[k].a, PK[k].e)}</b></button>`).join('')}</div>
   <div class="sh" id="prods"><h3>المنتجات<span>${pv().length} منتج</span></h3><div class="search"><input id="q" placeholder="ابحث عن منتج..." oninput="filt()"></div></div>${cats().length > 0 ? `<div class="chips"><button class="chip on" data-c="" onclick="setCat('')">الكل</button>${cats().map(c => `<button class="chip" data-c="${esc(c)}" onclick="setCat(this.dataset.c)">${esc(c)}</button>`).join('')}</div>` : ''}` +
   (pv().length ? `<div class="grid">${pv().map(p => `<div class="card" onclick="openProd(${p.id})" data-c="${esc(p.category || '')}" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
   <div class="b"><div class="nm">${esc(p.name)}</div><div class="small">${esc(p.description)}</div><div class="price">${money(cPrice(p))}<small>${sym()}</small></div>
@@ -348,3 +348,23 @@ function rgAdd(c) { $('#rg_' + c).insertAdjacentHTML('beforeend', rgRow()); }
 async function shSave() { try { const f = {}; ['a', 'b', 'c'].forEach(k => { f[k] = $('#shf_' + k).value; }); const cs = {}; ['SA', 'AE', 'IQ', 'OM'].forEach(c => { cs[c] = [...document.querySelectorAll('#rg_' + c + ' .rgr')].map(r => ({ n: r.querySelector('.rgn').value, fee: r.querySelector('.rgf').value })); }); const r = await api('/api/shipping', 'PUT', { fees: f, regions: cs }); SHIP = r.tiers; SHIPC = r.countries; $('#shm').innerHTML = msg('اتحفظ الشحن ✓', 'ok'); } catch (e) { $('#shm').innerHTML = msg(e.message); } }
 
 async function delOrder(id) { if (!confirm('متأكد إنك عايز تمسح الطلب #' + id + ' نهائي؟ مش هينفع ترجعه.')) return; try { await api('/api/orders/' + id, 'DELETE'); flash = msg('اتمسح الطلب ✓', 'ok'); go('admin'); } catch (e) { alert(e.message); } }
+
+const PK = { truck: { i: 'truck', a: 'توصيل سريع', e: 'Fast delivery' }, cash: { i: 'cash', a: 'الدفع عند الاستلام', e: 'Cash on delivery' }, shield: { i: 'shield', a: 'جودة مضمونة', e: 'Quality' } };
+async function perkBody(k) {
+  if (k === 'cash') return chL('ادفع نقدًا للمندوب وقت ما تستلم طلبك. مفيش دفع أونلاين ومش محتاج كارت.', 'Pay in cash to the courier when you receive your order. No online payment and no card needed.');
+  if (k === 'shield') return chL('بنختار منتجاتنا بعناية. لو عندك سؤال عن أي منتج، كلّمنا على واتساب من القائمة.', 'We pick our products with care. Have a question about a product? Message us on WhatsApp from the menu.');
+  try { if (!SHIPC) { const r = await api('/api/shipping'); SHIP = r.tiers; SHIPC = r.countries; } } catch { return chL('مصاريف الشحن بتظهر في السلة حسب منطقتك.', 'Shipping fees are shown in your cart based on your area.'); }
+  const fees = (COUNTRY === 'EG' ? (SHIP || []).map(t => +t.fee) : ((SHIPC[COUNTRY] || {}).regions || []).map(r => +r.fee)).filter(n => n >= 0 && isFinite(n)), s = sym(), c = cnm(COUNTRY);
+  if (!fees.length) return chL(`الشحن إلى ${c}: المصاريف بتظهر في السلة حسب منطقتك.`, `Shipping to ${c}: the fee is shown in your cart based on your area.`);
+  const lo = Math.min(...fees), hi = Math.max(...fees), r = lo === hi ? `${money(lo)} ${s}` : chL(`${money(lo)} لـ ${money(hi)} ${s}`, `${money(lo)} to ${money(hi)} ${s}`);
+  return chL(`الشحن إلى ${c}: مصاريف الشحن حسب ${COUNTRY === 'EG' ? 'المحافظة' : 'المنطقة'}، من ${r}. بتختار منطقتك في السلة وبتشوف المصاريف بالظبط قبل ما تأكد الطلب.`, `Shipping to ${c}: the fee depends on your ${COUNTRY === 'EG' ? 'governorate' : 'region'}, ${r}. Pick your area in the cart and you see the exact fee before you confirm.`);
+}
+async function perkOpen(k, el) {
+  const ic0 = el && el.querySelector('i'); if (ic0) { ic0.classList.remove('pop'); void ic0.offsetWidth; ic0.classList.add('pop'); }
+  perkClose(); const o = document.createElement('div'); o.id = 'pksh'; o.className = 'pksh'; o.setAttribute('dir', LANG === 'en' ? 'ltr' : 'rtl');
+  o.innerHTML = `<div class="pkbg" onclick="perkClose()"></div><div class="pkc" role="dialog" aria-modal="true" aria-label="${chL(PK[k].a, PK[k].e)}"><span class="pkg"></span><div class="pkh"><i>${ic(PK[k].i, 28)}</i><h3>${chL(PK[k].a, PK[k].e)}</h3></div><p id="pkt" class="pkp">…</p><button class="btn wide" onclick="perkClose()">${chL('تمام', 'Got it')}</button></div>`;
+  document.body.appendChild(o); document.addEventListener('keydown', perkEsc);
+  const t = await perkBody(k); const p = $('#pkt'); if (p) p.textContent = t;
+}
+function perkEsc(e) { if (e.key === 'Escape') perkClose(); }
+function perkClose() { const o = $('#pksh'); if (o) o.remove(); document.removeEventListener('keydown', perkEsc); }
