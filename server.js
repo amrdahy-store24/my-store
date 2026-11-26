@@ -186,7 +186,52 @@ async function api(req, res, url) {
     const ok = cands.filter(y => crypto.timingSafeEqual(Buffer.from(hash(pw, y.salt), 'hex'), Buffer.from(y.hash, 'hex')));
     if (!ok.length) throw new Err(401, 'اليوزر أو الباسورد غلط');
     if (ok.length > 1) throw new Err(409, 'في أكتر من حساب بنفس الاسم والباسورد، سجّل دخول برقم الموبايل بدل الاسم');
+    if (ok[0].role === 'admin' && (ok[0].passkeys || []).length && !pkOff()) throw new Err(403, 'حساب الأدمن بيدخل بالبصمة بس. استخدم زرار الدخول بالبصمة.');
     return login(res, ok[0]);
+  }
+  if (m === 'GET' && p === '/api/passkeys') { need(u); return send(res, 200, { keys: (u.passkeys || []).map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt })), adminOnly: u.role === 'admin' && !pkOff() }); }
+  if (m === 'POST' && p === '/api/passkey/register/options') {
+    need(u); const rp = pkRp(req), c = pkNew('reg', u.id);
+    return send(res, 200, { cid: c.id, publicKey: { challenge: c.challenge, rp: { id: rp.rpId, name: 'Tekmoo' }, user: { id: b64u('u' + u.id), name: u.username + (u.phone ? ' (' + u.phone + ')' : ''), displayName: u.username }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }], timeout: 60000, attestation: 'none', authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'required' }, excludeCredentials: (u.passkeys || []).map(k => ({ type: 'public-key', id: k.id })) } });
+  }
+  if (m === 'POST' && p === '/api/passkey/register/verify') {
+    need(u); const b = await body(req), rp = pkRp(req), c = pkTake(b.cid, 'reg'); if (c.userId !== u.id) throw new Err(400, 'التحقق فشل');
+    const r = (b.credential || {}).response || {}; pkClient(r.clientDataJSON, 'webauthn.create', c, rp);
+    let att; try { att = cborDecode(unb64u(r.attestationObject))[0]; } catch { throw new Err(400, 'بيانات غير صالحة'); }
+    const ad = att.get('authData'); if (!Buffer.isBuffer(ad) || ad.length < 55) throw new Err(400, 'بيانات غير صالحة');
+    if (!ad.subarray(0, 32).equals(crypto.createHash('sha256').update(rp.rpId).digest())) throw new Err(400, 'التحقق فشل');
+    const fl = ad[32]; if (!(fl & 1) || !(fl & 4) || !(fl & 64)) throw new Err(400, 'لازم تأكد بالبصمة أو قفل الجهاز');
+    const clen = ad.readUInt16BE(53), credId = ad.subarray(55, 55 + clen), key = cborDecode(ad.subarray(55 + clen))[0];
+    let pub, alg = key.get(3);
+    try {
+      if (alg === -7 && key.get(1) === 2) pub = crypto.createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: b64u(key.get(-2)), y: b64u(key.get(-3)) }, format: 'jwk' });
+      else if (alg === -257 && key.get(1) === 3) pub = crypto.createPublicKey({ key: { kty: 'RSA', n: b64u(key.get(-1)), e: b64u(key.get(-2)) }, format: 'jwk' });
+      else throw new Error('alg');
+    } catch { throw new Err(400, 'نوع المفتاح مش مدعوم'); }
+    if (db.users.some(x => (x.passkeys || []).some(k => k.id === b64u(credId)))) throw new Err(409, 'البصمة دي متسجلة قبل كده');
+    if ((u.passkeys || []).length >= 10) throw new Err(400, 'وصلت للحد الأقصى من الأجهزة');
+    (u.passkeys = u.passkeys || []).push({ id: b64u(credId), alg, pub: pub.export({ type: 'spki', format: 'der' }).toString('base64'), counter: ad.readUInt32BE(33), name: String(b.name || '').trim().slice(0, 40) || 'جهاز', createdAt: new Date().toISOString() });
+    save(db); return send(res, 200, { ok: true, count: u.passkeys.length });
+  }
+  if (m === 'POST' && p === '/api/passkey/delete') {
+    need(u); const b = await body(req), n = (u.passkeys || []).length; u.passkeys = (u.passkeys || []).filter(k => k.id !== String(b.id || ''));
+    if (u.passkeys.length === n) throw new Err(404, 'مش موجود'); save(db); return send(res, 200, { ok: true });
+  }
+  if (m === 'POST' && p === '/api/passkey/login/options') {
+    const rp = pkRp(req), c = pkNew('get', 0); return send(res, 200, { cid: c.id, publicKey: { challenge: c.challenge, rpId: rp.rpId, timeout: 60000, userVerification: 'required', allowCredentials: [] } });
+  }
+  if (m === 'POST' && p === '/api/passkey/login/verify') {
+    const ip = String(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); pkLimit(ip);
+    const b = await body(req), rp = pkRp(req), c = pkTake(b.cid, 'get'), cr = b.credential || {}, r = cr.response || {};
+    const user = db.users.find(x => (x.passkeys || []).some(k => k.id === String(cr.id || ''))), k = user && user.passkeys.find(z => z.id === String(cr.id || ''));
+    if (!user || !k) throw new Err(401, 'البصمة دي مش متسجلة. سجّل دخول عادي وفعّلها من حسابك.');
+    const hash = pkClient(r.clientDataJSON, 'webauthn.get', c, rp), ad = unb64u(r.authenticatorData);
+    if (ad.length < 37 || !ad.subarray(0, 32).equals(crypto.createHash('sha256').update(rp.rpId).digest())) throw new Err(401, 'التحقق فشل');
+    if (!(ad[32] & 1) || !(ad[32] & 4)) throw new Err(401, 'لازم تأكد بالبصمة أو قفل الجهاز');
+    const okSig = crypto.verify('sha256', Buffer.concat([ad, hash]), crypto.createPublicKey({ key: Buffer.from(k.pub, 'base64'), format: 'der', type: 'spki' }), unb64u(r.signature));
+    if (!okSig) throw new Err(401, 'التحقق فشل');
+    const cnt = ad.readUInt32BE(33); if ((cnt || k.counter) && cnt <= k.counter) throw new Err(401, 'التحقق فشل'); k.counter = cnt; save(db);
+    return login(res, user);
   }
   if (m === 'POST' && p === '/api/forgot') {
     const b = await body(req); checkCaptcha(b); const un = String(b.username || '').trim().toLowerCase(), ph = normPhone(b.phone), x = ph ? db.users.find(y => y.role === 'customer' && y.username === un && y.phone === ph) : null;
@@ -296,6 +341,35 @@ async function api(req, res, url) {
   }
   throw new Err(404, 'غير موجود');
 }
+
+// ---- Passkeys (WebAuthn), no external packages ----
+const b64u = b => Buffer.from(b).toString('base64url'), unb64u = v => Buffer.from(String(v || ''), 'base64url');
+function cborDecode(buf) {
+  let o = 0;
+  const rd = () => {
+    const ib = buf[o++], mt = ib >> 5; let ai = ib & 31, n;
+    if (ai < 24) n = ai; else if (ai === 24) n = buf[o++]; else if (ai === 25) { n = buf.readUInt16BE(o); o += 2; } else if (ai === 26) { n = buf.readUInt32BE(o); o += 4; } else throw new Error('cbor');
+    if (mt === 0) return n; if (mt === 1) return -1 - n;
+    if (mt === 2) { const r = buf.subarray(o, o + n); o += n; return r; }
+    if (mt === 3) { const r = buf.subarray(o, o + n).toString('utf8'); o += n; return r; }
+    if (mt === 4) { const a = []; for (let i = 0; i < n; i++) a.push(rd()); return a; }
+    if (mt === 5) { const m = new Map(); for (let i = 0; i < n; i++) { const k = rd(); m.set(k, rd()); } return m; }
+    throw new Error('cbor');
+  };
+  return [rd(), o];
+}
+const pkChal = new Map();
+function pkNew(type, userId) { for (const [k, v] of pkChal) if (v.exp < Date.now()) pkChal.delete(k); const id = crypto.randomBytes(12).toString('hex'), ch = crypto.randomBytes(32); pkChal.set(id, { ch: b64u(ch), exp: Date.now() + 120000, type, userId }); return { id, challenge: b64u(ch) }; }
+function pkTake(id, type) { const c = pkChal.get(String(id || '')); pkChal.delete(String(id || '')); if (!c || c.exp < Date.now() || c.type !== type) throw new Err(400, 'انتهت المحاولة، جرّب تاني'); return c; }
+function pkRp(req) { const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim(), name = host.split(':')[0]; const local = name === 'localhost' || name === '127.0.0.1'; return { rpId: process.env.RP_ID || name, origin: process.env.RP_ORIGIN || ((local ? 'http://' : 'https://') + host) }; }
+function pkClient(cdj, type, c, rp) {
+  let cd; try { cd = JSON.parse(unb64u(cdj).toString('utf8')); } catch { throw new Err(400, 'بيانات غير صالحة'); }
+  if (cd.type !== type || cd.challenge !== c.ch || cd.origin !== rp.origin) throw new Err(400, 'التحقق فشل');
+  return crypto.createHash('sha256').update(unb64u(cdj)).digest();
+}
+const pkOff = () => process.env.ADMIN_PASSKEY_OFF === '1';
+const pkRate = new Map();
+function pkLimit(ip) { const now = Date.now(), a = (pkRate.get(ip) || []).filter(t => now - t < 600000); if (a.length >= 40) throw new Err(429, 'محاولات كتير، استنى شوية'); a.push(now); pkRate.set(ip, a); }
 function login(res, user) {
   const t = crypto.randomBytes(24).toString('hex'); sessions.set(t, user.id);
   send(res, 200, { user: pub(user) }, { 'Set-Cookie': `sid=${t}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` });
