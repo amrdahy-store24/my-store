@@ -96,7 +96,7 @@ function sliderHtml() {
 function shop(f) {
   cat = ''; slI = 0; setTimeout(slStart, 0); $('#app').innerHTML = f + sliderHtml() + `<div class="perks">${['truck', 'cash', 'shield'].map(k => `<button class="perk" onclick="perkOpen('${k}',this)" aria-haspopup="dialog"><i>${ic(PK[k].i, 26)}</i><b>${chL(PK[k].a, PK[k].e)}</b></button>`).join('')}</div>
   <div class="sh" id="prods"><h3>المنتجات<span>${pv().length} منتج</span></h3><div class="search"><input id="q" placeholder="ابحث عن منتج..." oninput="filt()"></div></div>${cats().length > 0 ? `<div class="chips"><button class="chip on" data-c="" onclick="setCat('')">الكل</button>${cats().map(c => `<button class="chip" data-c="${esc(c)}" onclick="setCat(this.dataset.c)">${esc(c)}</button>`).join('')}</div>` : ''}` +
-  (pv().length ? `<div class="grid">${pv().map(p => `<div class="card" onclick="openProd(${p.id})" data-c="${esc(p.category || '')}" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
+  (pv().length ? `<div class="grid">${pv().map(p => `<div class="card" onclick="cardTap(event,this,${p.id})" data-c="${esc(p.category || '')}" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
   <div class="b"><div class="nm">${esc(p.name)}</div><div class="small">${esc(p.description)}</div><div class="price">${money(cPrice(p))}<small>${sym()}</small></div>
   <button class="btn" ${p.stock < 1 ? 'disabled' : ''} onclick="event.stopPropagation();addCart(${p.id})">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button></div></div>`).join('')}</div>` : `<div class="panel empty"><div class="e">${ic('bag', 56)}</div>مفيش منتجات حاليًا، ارجع قريب.</div>`);
 }
@@ -368,3 +368,12 @@ async function perkOpen(k, el) {
 }
 function perkEsc(e) { if (e.key === 'Escape') perkClose(); }
 function perkClose() { const o = $('#pksh'); if (o) o.remove(); document.removeEventListener('keydown', perkEsc); }
+
+let cardBusy = false;
+function cardTap(e, el, id) {
+  if (cardBusy) return; cardBusy = true;
+  const r = el.getBoundingClientRect(), x = (e.clientX || r.left + r.width / 2) - r.left, y = (e.clientY || r.top + r.height / 2) - r.top, d = Math.max(r.width, r.height) * 1.6;
+  const s = document.createElement('span'); s.className = 'rip'; s.style.cssText = `width:${d}px;height:${d}px;left:${x - d / 2}px;top:${y - d / 2}px`;
+  el.classList.add('tap'); el.appendChild(s);
+  setTimeout(() => { cardBusy = false; el.classList.remove('tap'); s.remove(); openProd(id); }, matchMedia('(prefers-reduced-motion:reduce)').matches ? 0 : 260);
+}
