@@ -54,9 +54,17 @@ function renderMenu() {
 }
 function setTheme(d) { if (d === (document.documentElement.getAttribute('data-theme') === 'dark')) return; toggleTheme(); if (menuOpen) renderMenu(); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && menuOpen) closeMenu(); });
-async function go(v, arg) {
-  try { products = (await api('/api/products')).products; } catch {}
-  try { offer = (await api('/api/offer')).offer; } catch {}
+let dataAt = 0, dataSig = '';
+async function loadData() {
+  const [p, o] = await Promise.all([api('/api/products').catch(() => null), api('/api/offer').catch(() => null)]);
+  if (p) products = p.products; if (o) offer = o.offer; dataAt = Date.now();
+  const sig = JSON.stringify([products, offer]); const ch = dataSig && sig !== dataSig; dataSig = sig; return ch;
+}
+function refreshBg() { dataAt = Date.now(); loadData().then(ch => { if (ch && ['shop', 'prod', 'cart'].includes(view) && !document.activeElement?.matches?.('input,textarea') && !document.getElementById('menu')) go(view, curArg, true); }).catch(() => {}); }
+let curArg;
+async function go(v, arg, quiet) {
+  curArg = arg;
+  if (!dataAt || v === 'admin') await loadData(); else if (!quiet && Date.now() - dataAt > 15000 && v !== 'login' && v !== 'register' && v !== 'forgot') refreshBg();
   const ch = v !== view; view = v; nav(); const f = flash; flash = '';
   if (v === 'shop') return shop(f);
   if (v === 'prod') return prodView(f, arg);
@@ -185,7 +193,7 @@ async function adminView(f, tab) {
   <div class="adm"><div class="panel"><h2>${editing ? 'تعديل منتج' : 'إضافة منتج'}</h2><div id="m"></div>
   <label>الاسم</label><input id="n" value="${esc(e.name)}"><label>السعر (ج.م)</label><input id="pr" type="number" min="0" step="0.01" value="${e.price ?? ''}">
   <label>القسم</label><input id="cg" list="cgl" value="${esc(e.category)}" placeholder="اختار قسم أو اكتب قسم جديد"><datalist id="cgl">${catList().map(c => `<option value="${esc(c)}">`).join('')}</datalist><label>الكمية المتاحة</label><input id="st" type="number" min="0" value="${e.stock ?? ''}"><label>الوصف</label><textarea id="d" rows="3">${esc(e.description)}</textarea>
-  <label>صورة المنتج (اختياري - ارفع صورة أو حط رابط)</label><input id="img" value="${esc(e.image && !e.image.startsWith('data:') ? e.image : '')}" placeholder="https://..."><input type="file" id="file" accept="image/*">
+  <label>صورة المنتج (اختياري - ارفع صورة أو حط رابط)</label><input id="img" value="${esc(e.image && !e.image.startsWith('data:') && !e.image.startsWith('/img/') ? e.image : '')}" placeholder="https://..."><input type="file" id="file" accept="image/*">
   <div class="row"><button class="btn" onclick="saveProd()">${editing ? 'حفظ التعديل' : '＋ إضافة المنتج'}</button>${editing ? '<button class="btn gray" onclick="editing=null;go(\'admin\')">إلغاء</button>' : ''}</div></div>
   <div><div class="panel"><h2>شرائح العروض (السلايدر أعلى الصفحة الرئيسية)</h2><div id="om"></div>
   <label class="chk"><input type="checkbox" id="on" ${offer && offer.on ? 'checked' : ''}> ظاهر في الصفحة الرئيسية</label>
@@ -211,10 +219,10 @@ function readFile(f) { return new Promise((ok, no) => { const r = new FileReader
 async function saveProd() {
   try {
     let image = $('#img').value.trim(); const file = $('#file').files[0];
-    if (file) image = await readFile(file); else if (!image && editing && editing.image.startsWith('data:')) image = editing.image;
+    if (file) image = await readFile(file); else if (!image && editing && (editing.image.startsWith('data:') || editing.image.startsWith('/img/'))) image = editing.image;
     const data = { name: $('#n').value, price: $('#pr').value, stock: $('#st').value, description: $('#d').value, image, category: $('#cg').value };
     if (editing) await api('/api/products/' + editing.id, 'PUT', data); else await api('/api/products', 'POST', data);
     flash = msg(editing ? 'اتعدل ✓' : 'اتضاف ✓', 'ok'); editing = null; go('admin');
   } catch (e) { $('#m').innerHTML = msg(e.message); }
 }
-(async () => { try { me = (await api('/api/me')).user; } catch {} go('shop'); })();
+(async () => { const m = api('/api/me').then(r => { me = r.user; }).catch(() => {}); await Promise.all([m, loadData()]); go('shop'); })();

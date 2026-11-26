@@ -28,6 +28,12 @@ function save(db) {
 let db;
 const sessions = { get: t => db.sessions[t], set: (t, id) => { db.sessions[t] = id; save(db); }, delete: t => { delete db.sessions[t]; save(db); } };
 
+const imgHash = new Map();
+function pubProd(p) {
+  if (!p.image || !p.image.startsWith('data:')) return p;
+  let h = imgHash.get(p.id); if (!h || h.len !== p.image.length || h.head !== p.image.slice(-40)) { h = { len: p.image.length, head: p.image.slice(-40), v: crypto.createHash('md5').update(p.image).digest('hex').slice(0, 10) }; imgHash.set(p.id, h); }
+  return { ...p, image: '/img/' + p.id + '?v=' + h.v };
+}
 function send(res, code, obj, headers = {}) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', ...headers });
   res.end(JSON.stringify(obj));
@@ -55,7 +61,7 @@ function cleanProduct(b) {
   if (!(price >= 0) || !isFinite(price)) throw new Err(400, 'السعر غير صحيح');
   if (!(stock >= 0)) throw new Err(400, 'الكمية غير صحيحة');
   const image = String(b.image || '');
-  if (image && !/^(https?:\/\/|data:image\/)/.test(image)) throw new Err(400, 'رابط الصورة غير صحيح');
+  if (image && !/^(https?:\/\/|data:image\/|\/img\/)/.test(image)) throw new Err(400, 'رابط الصورة غير صحيح');
   return { name: name.slice(0, 100), price: Math.round(price * 100) / 100, stock, description: String(b.description || '').slice(0, 1000), image, category: String(b.category || '').trim().slice(0, 40) };
 }
 
@@ -139,14 +145,24 @@ async function api(req, res, url) {
   }
   if (m === 'GET' && p === '/api/config') return send(res, 200, { ownerWhatsapp: OWNER_WHATSAPP });
   if (m === 'GET' && p === '/api/me') return send(res, 200, { user: pub(u) });
-  if (m === 'GET' && p === '/api/products') return send(res, 200, { products: db.products });
+  if (m === 'GET' && p === '/api/products') {
+    const out = JSON.stringify({ products: db.products.map(pubProd) }), tag = '"' + crypto.createHash('md5').update(out).digest('hex').slice(0, 16) + '"';
+    if (req.headers['if-none-match'] === tag) { res.writeHead(304, { ETag: tag, 'Cache-Control': 'no-cache' }); return res.end(); }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ETag: tag, 'Cache-Control': 'no-cache' }); return res.end(out);
+  }
+  let im = /^\/img\/(\d+)$/.exec(p);
+  if (im && m === 'GET') {
+    const pr = db.products.find(x => x.id == im[1]), mm = pr && /^data:(image\/[a-z+.-]+);base64,(.*)$/s.exec(pr.image || '');
+    if (!mm) throw new Err(404, 'غير موجود');
+    res.writeHead(200, { 'Content-Type': mm[1], 'Cache-Control': 'public, max-age=31536000, immutable' }); return res.end(Buffer.from(mm[2], 'base64'));
+  }
   if (m === 'POST' && p === '/api/products') {
-    need(u, 'admin'); const prod = { id: db.nextId++, ...cleanProduct(await body(req)) }; db.products.push(prod); save(db); return send(res, 201, { product: prod });
+    need(u, 'admin'); const prod = { id: db.nextId++, ...cleanProduct(await body(req)) }; if (prod.image.startsWith('/img/')) prod.image = ''; db.products.push(prod); save(db); return send(res, 201, { product: pubProd(prod) });
   }
   let mt = /^\/api\/products\/(\d+)$/.exec(p);
   if (mt && m === 'PUT') {
     need(u, 'admin'); const i = db.products.findIndex(x => x.id == mt[1]); if (i < 0) throw new Err(404, 'المنتج مش موجود');
-    db.products[i] = { id: db.products[i].id, ...cleanProduct(await body(req)) }; save(db); return send(res, 200, { product: db.products[i] });
+    const old = db.products[i]; db.products[i] = { id: old.id, ...cleanProduct(await body(req)) }; if (db.products[i].image.startsWith('/img/')) db.products[i].image = old.image; save(db); return send(res, 200, { product: pubProd(db.products[i]) });
   }
   if (mt && m === 'DELETE') {
     need(u, 'admin'); const n = db.products.length; db.products = db.products.filter(x => x.id != mt[1]);
@@ -185,11 +201,12 @@ const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '
 function start() { http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   try {
-    if (url.pathname.startsWith('/api/')) return await api(req, res, url);
+    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/img/')) return await api(req, res, url);
     const f = url.pathname === '/' ? 'index.html' : path.basename(url.pathname);
     const fp = ['index.html','style.css','app.js','i18n.js','favicon.svg','apple-touch-icon.png'].includes(f) ? path.join(__dirname, f) : '/nonexistent';
     if (!fs.existsSync(fp)) { res.writeHead(404); return res.end('404'); }
-    res.writeHead(200, { 'Content-Type': types[path.extname(fp)] || 'application/octet-stream' }); fs.createReadStream(fp).pipe(res);
+    const ext = path.extname(fp), versioned = url.searchParams.has('v') && ext !== '.html';
+    res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=86400' }); fs.createReadStream(fp).pipe(res);
   } catch (e) { send(res, e.code || 500, { error: e.code ? e.message : 'حصل خطأ في السيرفر' }); }
 }).listen(PORT, () => console.log(`المتجر شغال على http://localhost:${PORT}`)); }
 (async () => {
