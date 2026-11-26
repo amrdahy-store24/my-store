@@ -59,11 +59,33 @@ function cleanProduct(b) {
   return { name: name.slice(0, 100), price: Math.round(price * 100) / 100, stock, description: String(b.description || '').slice(0, 1000), image, category: String(b.category || '').trim().slice(0, 40) };
 }
 
+
+const CAP_SECRET = process.env.CAPTCHA_SECRET || crypto.randomBytes(32).toString('hex'), capUsed = new Map();
+function capSig(id, exp, ans) { return crypto.createHmac('sha256', CAP_SECRET).update(id + '.' + exp + '.' + ans).digest('hex').slice(0, 32); }
+function makeCaptcha() {
+  const A = 'ACDEFGHJKLMNPRTUVWXY34679'; let ans = ''; for (let i = 0; i < 5; i++) ans += A[crypto.randomInt(A.length)];
+  const r = (a, b) => a + crypto.randomInt((b - a) * 100) / 100; let g = '';
+  for (let i = 0; i < 5; i++) g += `<text x="${18 + i * 30 + r(-3, 3)}" y="${r(40, 46)}" font-size="${r(30, 36)}" font-weight="700" font-family="Arial,Helvetica,sans-serif" fill="hsl(${crypto.randomInt(360)},55%,38%)" transform="rotate(${r(-22, 22)} ${30 + i * 30} 32)">${ans[i]}</text>`;
+  let n = ''; for (let i = 0; i < 6; i++) n += `<path d="M${r(0, 180)} ${r(0, 60)} Q${r(0, 180)} ${r(0, 60)} ${r(0, 180)} ${r(0, 60)}" stroke="hsl(${crypto.randomInt(360)},50%,55%)" stroke-width="1.6" fill="none"/>`;
+  for (let i = 0; i < 25; i++) n += `<circle cx="${r(0, 180)}" cy="${r(0, 60)}" r="1.4" fill="#888"/>`;
+  const id = crypto.randomBytes(8).toString('hex'), exp = Date.now() + 5 * 60000;
+  return { token: id + '.' + exp + '.' + capSig(id, exp, ans), svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 60" width="180" height="60"><rect width="180" height="60" rx="8" fill="#f3f4f8"/>${n}${g}</svg>` };
+}
+function checkCaptcha(b) {
+  const [id, exp, sig] = String(b.captchaToken || '').split('.'), ans = String(b.captcha || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  for (const [k, v] of capUsed) if (v < Date.now()) capUsed.delete(k);
+  if (!id || !exp || !sig || Number(exp) < Date.now()) throw new Err(400, 'كود التحقق انتهى، اضغط تحديث واكتبه تاني');
+  if (capUsed.has(id)) throw new Err(400, 'كود التحقق اتستخدم قبل كده، اضغط تحديث');
+  const ok = sig.length === 32 && crypto.timingSafeEqual(Buffer.from(capSig(id, exp, ans)), Buffer.from(sig));
+  capUsed.set(id, Number(exp));
+  if (!ok) throw new Err(400, 'كود التحقق غلط، جرّب الكود الجديد');
+}
 async function api(req, res, url) {
   const u = getUser(req), m = req.method, p = url.pathname;
   let r;
+  if (m === 'GET' && p === '/api/captcha') return send(res, 200, makeCaptcha());
   if (m === 'POST' && p === '/api/register') {
-    const b = await body(req); const username = String(b.username || '').trim().toLowerCase(), pw = String(b.password || '');
+    const b = await body(req); checkCaptcha(b); const username = String(b.username || '').trim().toLowerCase(), pw = String(b.password || '');
     if (!/^[a-z0-9_.]{3,20}$/.test(username)) throw new Err(400, 'اليوزر 3-20 حرف إنجليزي أو أرقام أو _ .');
     if (pw.length < 6) throw new Err(400, 'الباسورد لازم 6 حروف على الأقل');
     if (db.users.some(x => x.username === username)) throw new Err(409, 'اليوزر ده مستخدم، اختار غيره');
@@ -75,14 +97,14 @@ async function api(req, res, url) {
     return login(res, nu);
   }
   if (m === 'POST' && p === '/api/login') {
-    const b = await body(req); const username = String(b.username || '').trim().toLowerCase();
+    const b = await body(req); checkCaptcha(b); const username = String(b.username || '').trim().toLowerCase();
     const x = db.users.find(y => y.username === username);
     if (!x || !crypto.timingSafeEqual(Buffer.from(hash(String(b.password || ''), x.salt), 'hex'), Buffer.from(x.hash, 'hex')))
       throw new Err(401, 'اليوزر أو الباسورد غلط');
     return login(res, x);
   }
   if (m === 'POST' && p === '/api/forgot') {
-    const b = await body(req); const x = db.users.find(y => y.username === String(b.username || '').trim().toLowerCase()), ph = normPhone(b.phone);
+    const b = await body(req); checkCaptcha(b); const x = db.users.find(y => y.username === String(b.username || '').trim().toLowerCase()), ph = normPhone(b.phone);
     if (x && x.role === 'customer' && x.phone && ph && x.phone === ph) { x.resetAt = new Date().toISOString(); save(db); }
     return send(res, 200, { ok: true });
   }

@@ -104,26 +104,29 @@ async function checkout() {
   try { await api('/api/orders', 'POST', { items: cart, address: $('#addr').value, phone: $('#ph').value });
     cart = []; saveCart(); flash = msg('تم تسجيل طلبك بنجاح ✓ هنتواصل معاك قريب', 'ok'); go('orders'); } catch (e) { $('#m').innerHTML = msg(e.message); }
 }
+async function loadCap() { const el = document.getElementById('cap'); if (!el) return; try { const c = await api('/api/captcha'); window.capTok = c.token; el.innerHTML = c.svg + '<button type="button" class="caprf" onclick="loadCap()" aria-label="تحديث">↻</button>'; const i = document.getElementById('cp'); if (i) i.value = ''; } catch (e) { el.textContent = 'تعذّر تحميل الكود، اضغط تحديث'; } }
 function authView(v, f) {
   const reg = v === 'register';
   $('#app').innerHTML = `<div class="panel narrow"><div class="ai">${ic(reg ? 'spark' : 'lock', 30)}</div><h2>${reg ? 'إنشاء حساب جديد' : 'أهلاً بيك تاني'}</h2><p class="small" style="margin-top:-8px">${reg ? 'سجّل في ثواني وابدأ اطلب' : 'سجّل دخولك عشان تكمل طلباتك'}</p>${f}<div id="m"></div><label>اسم المستخدم</label><input id="u" autocomplete="username" autocapitalize="none">
-  ${reg ? '<label>رقم الموبايل</label><input id="ph" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx">' : ''}<label>الباسورد</label><input id="p" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" onkeydown="if(event.key==='Enter')auth('${v}')">
+  ${reg ? '<label>رقم الموبايل</label><input id="ph" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx">' : ''}<label>الباسورد</label><input id="p" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}"><label>كود التحقق (عشان نتأكد إنك مش روبوت)</label><div class="cap" id="cap"></div><input id="cp" onkeydown="if(event.key==='Enter')auth(\'${v}\')" autocomplete="off" autocapitalize="characters" maxlength="8" placeholder="اكتب الحروف اللي في الصورة" dir="ltr" style="text-align:center;letter-spacing:3px">
   <button class="btn wide" onclick="auth('${v}')">${reg ? 'إنشاء الحساب' : 'دخول'}</button>
   ${reg ? '' : '<div class="alt" style="margin-top:10px"><a onclick="go(\'forgot\')">نسيت الباسورد؟</a></div>'}
   <div class="alt">${reg ? 'عندك حساب؟ <a onclick="go(\'login\')">سجّل دخول</a>' : 'مش عندك حساب؟ <a onclick="go(\'register\')">أنشئ حساب</a>'}</div></div>`;
+  loadCap();
 }
 async function auth(v) {
-  try { me = (await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value, phone: v === 'register' ? $('#ph').value : undefined })).user; flash = msg('أهلاً ' + me.username, 'ok'); const a = after; after = null; if (a && me.role !== 'admin') go(a.v, a.a); else go(me.role === 'admin' ? 'admin' : 'shop'); }
-  catch (e) { $('#m').innerHTML = msg(e.message); }
+  try { me = (await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value, phone: v === 'register' ? $('#ph').value : undefined, captcha: $('#cp').value, captchaToken: window.capTok })).user; flash = msg('أهلاً ' + me.username, 'ok'); const a = after; after = null; if (a && me.role !== 'admin') go(a.v, a.a); else go(me.role === 'admin' ? 'admin' : 'shop'); }
+  catch (e) { $('#m').innerHTML = msg(e.message); loadCap(); }
 }
 function forgotView(f) {
   $('#app').innerHTML = `<div class="panel narrow"><div class="ai">${ic('lock', 30)}</div><h2>نسيت الباسورد؟</h2><p class="small" style="margin-top:-8px">اكتب اسم المستخدم ورقم الموبايل اللي سجلت بيه، وهنبعتلك باسورد مؤقت على الواتساب.</p>${f}<div id="m"></div>
-  <label>اسم المستخدم</label><input id="u" autocapitalize="none"><label>رقم الموبايل</label><input id="ph" inputmode="tel" placeholder="01xxxxxxxxx" onkeydown="if(event.key==='Enter')forgot()">
+  <label>اسم المستخدم</label><input id="u" autocapitalize="none"><label>رقم الموبايل</label><input id="ph" inputmode="tel" placeholder="01xxxxxxxxx" onkeydown="if(event.key==='Enter')forgot()"><label>كود التحقق (عشان نتأكد إنك مش روبوت)</label><div class="cap" id="cap"></div><input id="cp" onkeydown="if(event.key==='Enter')forgot()" autocomplete="off" autocapitalize="characters" maxlength="8" placeholder="اكتب الحروف اللي في الصورة" dir="ltr" style="text-align:center;letter-spacing:3px">
   <button class="btn wide" onclick="forgot()">إرسال الطلب</button><div class="alt"><a onclick="go('login')">رجوع لتسجيل الدخول</a></div></div>`;
+  loadCap();
 }
 async function forgot() {
-  try { await api('/api/forgot', 'POST', { username: $('#u').value, phone: $('#ph').value });
-    $('#m').innerHTML = msg('لو البيانات مظبوطة، طلبك وصل للإدارة وهيتواصلوا معاك على رقم الموبايل بباسورد مؤقت خلال وقت قصير.', 'ok'); } catch (e) { $('#m').innerHTML = msg(e.message); }
+  try { await api('/api/forgot', 'POST', { username: $('#u').value, phone: $('#ph').value, captcha: $('#cp').value, captchaToken: window.capTok });
+    $('#m').innerHTML = msg('لو البيانات مظبوطة، طلبك وصل للإدارة وهيتواصلوا معاك على رقم الموبايل بباسورد مؤقت خلال وقت قصير.', 'ok'); loadCap(); } catch (e) { $('#m').innerHTML = msg(e.message); loadCap(); }
 }
 async function chPw() {
   try { await api('/api/password', 'POST', { oldPassword: $('#op').value, newPassword: $('#np').value }); $('#op').value = $('#np').value = ''; $('#pm').innerHTML = msg('اتغير الباسورد ✓', 'ok'); } catch (e) { $('#pm').innerHTML = msg(e.message); }
