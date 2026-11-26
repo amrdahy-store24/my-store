@@ -258,7 +258,7 @@ async function adminView(f, tab) {
   <div class="panel"><h2>العملاء المسجلين (${users.length})</h2>${users.map(x => `<div class="pr" style="grid-template-columns:1fr auto"><div><b>${esc(x.username)}</b>${x.resetAt ? ' <span class="st s2">طلب نسيان باسورد</span>' : ''}<div class="sm" dir="ltr" style="text-align:right">${esc(x.phone) || 'بدون رقم'} • ${x.createdAt ? new Date(x.createdAt).toLocaleDateString('en-GB') : '-'}</div><div id="rs${x.id}"></div></div>
   <div class="row"><button class="btn red" onclick="delUser(${x.id},'${esc(x.username)}')">حذف</button><button class="btn gray" onclick="resetUser(${x.id},'${esc(x.username)}','${esc(x.phone)}')">باسورد مؤقت</button></div></div>`).join('') || '<div class="empty">لسه مفيش عملاء.</div>'}</div>
   <div class="panel"><h2>الطلبات (${orders.length})</h2>${orders.map(o => `<div class="ord"><div class="h"><b>#${o.id} • ${esc(o.username)}</b><span class="st ${stc(o.status)}">${esc(o.status)}</span></div><div class="small">${money(o.total)} ج.م • ${esc(o.phone)} • ${esc(o.address)}</div><div>${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div>
-  <select onchange="setStatus(${o.id},this.value)">${['جديد', 'تم الشحن', 'تم التسليم', 'ملغي'].map(s => `<option ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`).join('') || '<div class="empty">مفيش طلبات.</div>'}</div></div></div>`;
+  <select onchange="setStatus(${o.id},this.value)">${['جديد', 'تم الشحن', 'تم التسليم', 'ملغي'].map(s => `<option ${s === o.status ? 'selected' : ''}>${s}</option>`).join('')}</select> <button class="btn red" id="do${o.id}" style="${o.status === 'ملغي' ? '' : 'display:none'}" onclick="delOrder(${o.id})">مسح الطلب</button></div>`).join('') || '<div class="empty">مفيش طلبات.</div>'}</div></div></div>`;
 }
 async function saveOffer() {
   try { const image = '';
@@ -267,7 +267,7 @@ async function saveOffer() {
 }
 function editProd(id) { editing = products.find(p => p.id === id); go('admin'); scrollTo(0, 0); }
 async function delProd(id) { if (!confirm('متأكد إنك عايز تحذف المنتج؟')) return; try { await api('/api/products/' + id, 'DELETE'); flash = msg('اتحذف ✓', 'ok'); } catch (e) { flash = msg(e.message); } go('admin'); }
-async function setStatus(id, s) { try { await api(`/api/orders/${id}/status`, 'PUT', { status: s }); } catch (e) { alert(e.message); } }
+async function setStatus(id, s) { try { await api(`/api/orders/${id}/status`, 'PUT', { status: s }); const b = $('#do' + id); if (b) b.style.display = s === 'ملغي' ? '' : 'none'; } catch (e) { alert(e.message); } }
 function readFile(f) { return new Promise((ok, no) => { const r = new FileReader(); r.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, 600 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = im.width * k; c.height = im.height * k; c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', .8)); }; im.onerror = () => no(new Error('صورة غير صالحة')); im.src = r.result; }; r.onerror = no; r.readAsDataURL(f); }); }
 async function saveProd() {
   try {
@@ -346,3 +346,5 @@ async function chSave() { try { const a = {}; CH.faq.forEach(f => { a[f.id] = ($
 const rgRow = (n = '', fee = '') => `<div class="rgr" style="display:flex;gap:6px;margin:6px 0"><input class="rgn" placeholder="اسم المنطقة" value="${esc(n)}" style="flex:2"><input class="rgf" inputmode="decimal" placeholder="سعر الشحن" value="${esc(fee)}" style="flex:1"><button type="button" class="rm" onclick="this.parentNode.remove()" aria-label="حذف">✕</button></div>`;
 function rgAdd(c) { $('#rg_' + c).insertAdjacentHTML('beforeend', rgRow()); }
 async function shSave() { try { const f = {}; ['a', 'b', 'c'].forEach(k => { f[k] = $('#shf_' + k).value; }); const cs = {}; ['SA', 'AE', 'IQ', 'OM'].forEach(c => { cs[c] = [...document.querySelectorAll('#rg_' + c + ' .rgr')].map(r => ({ n: r.querySelector('.rgn').value, fee: r.querySelector('.rgf').value })); }); const r = await api('/api/shipping', 'PUT', { fees: f, regions: cs }); SHIP = r.tiers; SHIPC = r.countries; $('#shm').innerHTML = msg('اتحفظ الشحن ✓', 'ok'); } catch (e) { $('#shm').innerHTML = msg(e.message); } }
+
+async function delOrder(id) { if (!confirm('متأكد إنك عايز تمسح الطلب #' + id + ' نهائي؟ مش هينفع ترجعه.')) return; try { await api('/api/orders/' + id, 'DELETE'); flash = msg('اتمسح الطلب ✓', 'ok'); go('admin'); } catch (e) { alert(e.message); } }

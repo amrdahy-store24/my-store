@@ -339,6 +339,12 @@ async function api(req, res, url) {
     const s = (await body(req)).status; if (!['جديد', 'تم الشحن', 'تم التسليم', 'ملغي'].includes(s)) throw new Err(400, 'حالة غير صحيحة');
     o.status = s; save(db); return send(res, 200, { order: o });
   }
+  mt = /^\/api\/orders\/(\d+)$/.exec(p);
+  if (mt && m === 'DELETE') {
+    need(u, 'admin'); const i = db.orders.findIndex(x => x.id == mt[1]); if (i < 0) throw new Err(404, 'الطلب مش موجود');
+    if (db.orders[i].status !== 'ملغي') throw new Err(400, 'ينفع تمسح الطلبات الملغية بس');
+    db.orders.splice(i, 1); save(db); return send(res, 200, { ok: true });
+  }
   throw new Err(404, 'غير موجود');
 }
 
