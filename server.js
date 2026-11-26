@@ -8,6 +8,16 @@ const ADMIN_PASS = process.env.ADMIN_PASS || 'admin123';
 const OWNER_WHATSAPP = process.env.OWNER_WHATSAPP || '201019525320';
 
 function hash(pw, salt) { return crypto.scryptSync(pw, salt, 32).toString('hex'); }
+// async hashing: runs in the thread pool (event loop stays free), max 2 at once, bounded queue
+let hActive = 0; const hQ = [];
+function hashA(pw, salt) {
+  return new Promise((ok, no) => {
+    const run = () => { hActive++; crypto.scrypt(pw, salt, 32, (e, k) => { hActive--; const n = hQ.shift(); if (n) n(); e ? no(e) : ok(k.toString('hex')); }); };
+    if (hActive < 2) return run();
+    if (hQ.length >= 25) return no(new Err(503, 'الموقع مزدحم دلوقتي، جرّب تاني كمان ثواني'));
+    hQ.push(run);
+  });
+}
 function load(stored) {
   if (stored) return stored;
   if (!process.env.DATABASE_URL && fs.existsSync(DB_FILE)) return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
@@ -26,7 +36,20 @@ function save(db) {
   fs.writeFileSync(DB_FILE + '.tmp', JSON.stringify(db, null, 1)); fs.renameSync(DB_FILE + '.tmp', DB_FILE);
 }
 let db;
-const sessions = { get: t => db.sessions[t], set: (t, id) => { db.sessions[t] = id; save(db); }, delete: t => { delete db.sessions[t]; save(db); } };
+let soonT = null;
+function saveSoon() { if (soonT) return; soonT = setTimeout(() => { soonT = null; save(db); }, 1500); }
+function flushNow() { try { if (soonT) { clearTimeout(soonT); soonT = null; } if (db) save(db); } catch (e) { console.error(e.message); } return chain; }
+const SESS_MS = 7 * 86400000;
+const sessions = { get: t => db.sessions[t], set: (t, id) => { db.sessions[t] = id; (db.sessionAt = db.sessionAt || {})[t] = Date.now(); saveSoon(); }, delete: t => { delete db.sessions[t]; if (db.sessionAt) delete db.sessionAt[t]; saveSoon(); } };
+function sweepSessions() {
+  const at = db.sessionAt = db.sessionAt || {}, now = Date.now(); let n = 0;
+  for (const t of Object.keys(db.sessions)) { if (!at[t]) at[t] = now; if (now - at[t] > SESS_MS) { delete db.sessions[t]; delete at[t]; n++; } }
+  for (const t of Object.keys(at)) if (!(t in db.sessions)) delete at[t];
+  if (n) { console.log('expired sessions removed:', n); saveSoon(); }
+}
+process.on('uncaughtException', e => console.error('uncaught', e && e.stack || e));
+process.on('unhandledRejection', e => console.error('unhandled', e && e.stack || e));
+for (const sg of ['SIGTERM', 'SIGINT']) process.on(sg, () => { flushNow().finally(() => process.exit(0)); setTimeout(() => process.exit(0), 4000).unref(); });
 
 const imgHash = new Map();
 function pubProd(p) {
@@ -175,7 +198,8 @@ async function api(req, res, url) {
     const phone = normPhone(b.phone); if (!phone || (country === 'EG') !== !phone.startsWith('+')) throw new Err(400, country === 'EG' ? 'اكتب رقم موبايل مصري صحيح (مثال 01012345678)' : 'اكتب رقمك بالصيغة الدولية، مثال +966501234567');
     if (db.users.some(x => x.phone === phone)) throw new Err(409, 'الرقم ده مسجل بحساب تاني');
     const salt = crypto.randomBytes(16).toString('hex');
-    const nu = { id: db.nextId++, username, salt, hash: hash(pw, salt), role: 'customer', phone, country, status: 'active', createdAt: new Date().toISOString() };
+    const hh = await hashA(pw, salt); if (db.users.some(x => x.phone === phone)) throw new Err(409, 'الرقم ده مسجل بحساب تاني');
+    const nu = { id: db.nextId++, username, salt, hash: hh, role: 'customer', phone, country, status: 'active', createdAt: new Date().toISOString() };
     db.users.push(nu); save(db);
     return login(res, nu);
   }
@@ -183,7 +207,7 @@ async function api(req, res, url) {
     const b = await body(req); checkCaptcha(b); const username = String(b.username || '').trim().toLowerCase();
     const ph = normPhone(username), pw = String(b.password || '');
     const cands = ph ? db.users.filter(y => y.phone === ph) : db.users.filter(y => y.username === username);
-    const ok = cands.filter(y => crypto.timingSafeEqual(Buffer.from(hash(pw, y.salt), 'hex'), Buffer.from(y.hash, 'hex')));
+    const hs = await Promise.all(cands.slice(0, 20).map(y => hashA(pw, y.salt))); const ok = cands.slice(0, 20).filter((y, i) => crypto.timingSafeEqual(Buffer.from(hs[i], 'hex'), Buffer.from(y.hash, 'hex')));
     if (!ok.length) throw new Err(401, 'اليوزر أو الباسورد غلط');
     if (ok.length > 1) throw new Err(409, 'في أكتر من حساب بنفس الاسم والباسورد، سجّل دخول برقم الموبايل بدل الاسم');
     if (ok[0].role === 'admin' && (ok[0].passkeys || []).length && !pkOff()) throw new Err(403, 'حساب الأدمن بيدخل بالبصمة بس. استخدم زرار الدخول بالبصمة.');
@@ -240,9 +264,9 @@ async function api(req, res, url) {
   }
   if (m === 'POST' && p === '/api/password') {
     need(u); const b = await body(req), np = String(b.newPassword || '');
-    if (!crypto.timingSafeEqual(Buffer.from(hash(String(b.oldPassword || ''), u.salt), 'hex'), Buffer.from(u.hash, 'hex'))) throw new Err(400, 'الباسورد القديم غلط');
+    if (!crypto.timingSafeEqual(Buffer.from(await hashA(String(b.oldPassword || ''), u.salt), 'hex'), Buffer.from(u.hash, 'hex'))) throw new Err(400, 'الباسورد القديم غلط');
     if (np.length < 6) throw new Err(400, 'الباسورد الجديد لازم 6 حروف على الأقل');
-    u.salt = crypto.randomBytes(16).toString('hex'); u.hash = hash(np, u.salt); save(db); return send(res, 200, { ok: true });
+    u.salt = crypto.randomBytes(16).toString('hex'); u.hash = await hashA(np, u.salt); save(db); return send(res, 200, { ok: true });
   }
   let mr;
   if (m === 'GET' && p === '/api/users') { need(u, 'admin'); return send(res, 200, { users: db.users.filter(x => x.role === 'customer').map(x => ({ id: x.id, username: x.username, phone: x.phone || '', status: x.status || 'active', createdAt: x.createdAt || '', resetAt: x.resetAt || '' })).reverse() }); }
@@ -255,7 +279,7 @@ async function api(req, res, url) {
   if (m === 'POST' && mr) {
     need(u, 'admin'); const x = db.users.find(y => y.id == mr[1] && y.role === 'customer'); if (!x) throw new Err(404, 'العميل مش موجود');
     const al = 'abcdefghjkmnpqrstuvwxyz23456789'; let t = ''; for (const by of crypto.randomBytes(8)) t += al[by % al.length];
-    x.salt = crypto.randomBytes(16).toString('hex'); x.hash = hash(t, x.salt); delete x.resetAt; save(db); return send(res, 200, { tempPassword: t });
+    x.salt = crypto.randomBytes(16).toString('hex'); x.hash = await hashA(t, x.salt); delete x.resetAt; save(db); return send(res, 200, { tempPassword: t });
   }
   if (m === 'POST' && p === '/api/logout') {
     const mm = /sid=([a-f0-9]+)/.exec(req.headers.cookie || ''); if (mm) sessions.delete(mm[1]);
@@ -385,6 +409,7 @@ function start() { http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   try {
     if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/img/')) return await api(req, res, url);
+    if (url.pathname === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end('ok'); }
     if (url.pathname === '/robots.txt' || url.pathname === '/sitemap.xml') {
       const base = process.env.PUBLIC_URL || ('https://' + (req.headers.host || 'tekmoo.onrender.com'));
       res.writeHead(200, { 'Content-Type': url.pathname === '/robots.txt' ? 'text/plain; charset=utf-8' : 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
@@ -405,5 +430,5 @@ function start() { http.createServer(async (req, res) => {
     await pool.query('CREATE TABLE IF NOT EXISTS store(id int primary key, data jsonb not null)');
     const r = await pool.query('SELECT data FROM store WHERE id=1'); stored = r.rows[0] && r.rows[0].data;
   }
-  db = load(stored); db.sessions = db.sessions || {}; db.users.forEach(x => { if (x.role === 'customer') x.status = 'active'; }); db.products.forEach(x => { if (x.category === undefined) x.category = 'إلكترونيات'; }); save(db); start();
+  db = load(stored); db.sessions = db.sessions || {}; db.users.forEach(x => { if (x.role === 'customer') x.status = 'active'; }); db.products.forEach(x => { if (x.category === undefined) x.category = 'إلكترونيات'; }); sweepSessions(); save(db); setInterval(sweepSessions, 3600000).unref(); start();
 })();
