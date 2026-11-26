@@ -72,7 +72,7 @@ async function go(v, arg, quiet) {
   if (v === 'login' || v === 'register') return authView(v, f);
   if (v === 'forgot') return forgotView(f);
   if (v === 'orders') return ordersView(f);
-  if (v === 'admin') return adminView(f, arg);
+  if (v === 'admin') return adminView(f, arg).then(chAdminPanel);
 }
 function filt() { const q = ($('#q') ? $('#q').value : '').trim().toLowerCase(); document.querySelectorAll('.card').forEach(c => c.style.display = c.dataset.s.includes(q) && (!cat || c.dataset.c === cat) ? '' : 'none'); }
 function setCat(c) { cat = c; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.c === c)); filt(); }
@@ -226,3 +226,59 @@ async function saveProd() {
   } catch (e) { $('#m').innerHTML = msg(e.message); }
 }
 (async () => { const m = api('/api/me').then(r => { me = r.user; }).catch(() => {}); await Promise.all([m, loadData()]); go('shop'); })();
+/* ===== Chat helper: rule-based auto replies + "talk to a person" on WhatsApp (no external services) ===== */
+const CH = { faq: null, open: false, log: [], last: '', hist: [], ai: false };
+const chL = (a, e) => LANG === 'en' ? e : a;
+const chNorm = s => String(s || '').toLowerCase().replace(/[\u064B-\u065F\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/[^\u0600-\u06FFa-z0-9 ]/g, ' ');
+function chWa(q) { const wa = String((CH.wa || cfg.ownerWhatsapp) || '').replace(/\D/g, ''); const t = chL('أهلاً، عندي سؤال: ', 'Hi, I have a question: ') + (q || ''); return wa ? `https://wa.me/${wa}?text=${encodeURIComponent(t.trim())}` : '#'; }
+async function chLoad() { if (CH.faq) return; try { const r = await api('/api/chat'); CH.faq = r.faq; CH.wa = r.wa; CH.ai = !!r.ai; } catch { CH.faq = []; } }
+function chMatch(q) {
+  const n = chNorm(q), toks = n.split(/\s+/).filter(w => w.length > 1); let best = null, bs = 0;
+  for (const f of CH.faq) { const ks = chNorm(f.k).split(/\s+/).filter(Boolean); let sc = 0; for (const w of toks) for (const k of ks) { if (w === k) sc += 2; else if (w.length > 2 && (k.startsWith(w) || w.startsWith(k)) && k.length > 2) sc += 1; } if (sc > bs) { bs = sc; best = f; } }
+  return bs >= 2 ? best : null;
+}
+function chAdd(who, html) { CH.log.push({ who, html }); chPaint(); }
+function chPaint() {
+  const box = $('#chlog'); if (!box) return;
+  box.innerHTML = CH.log.map(m => `<div class="cm ${m.who}">${m.html}</div>`).join('');
+  box.scrollTop = box.scrollHeight;
+}
+async function chOrderStatus() {
+  if (!me) { chAdd('bot', esc(chL('سجّل دخولك الأول عشان أقولك حالة طلباتك.', 'Please log in first so I can show your order status.')) + `<br><a class="cl" onclick="chClose();go('login')">${esc(chL('تسجيل الدخول', 'Log in'))}</a>`); return; }
+  try {
+    const { orders } = await api('/api/orders'); const mine = me.role === 'admin' ? [] : orders;
+    if (!mine.length) return chAdd('bot', esc(chL('مفيش طلبات على حسابك لسه.', 'You have no orders yet.')));
+    const o = mine[0]; const dt = o.createdAt ? new Date(o.createdAt).toLocaleDateString(LANG === 'en' ? 'en-GB' : 'ar-EG') : '';
+    chAdd('bot', esc(chL(`آخر طلب ليك رقم #${o.id}${dt ? ' بتاريخ ' + dt : ''}: الحالة «${o.status}»، الإجمالي ${money(o.total)} ج.م.`, `Your latest order #${o.id}${dt ? ' on ' + dt : ''}: status "${o.status}", total ${money(o.total)} EGP.`)) + `<br><a class="cl" onclick="chClose();go('orders')">${esc(chL('كل طلباتي', 'All my orders'))}</a>`);
+  } catch { chAdd('bot', esc(chL('معرفتش أجيب الطلبات دلوقتي، جرب تاني.', 'Could not load your orders, try again.'))); }
+}
+async function chAsk(text, id) {
+  text = String(text || '').trim(); if (!text) return; CH.last = text; await chLoad();
+  chAdd('me', esc(text)); if (id === 'status' || /(حاله|حالة|فين).*(طلب|اوردر)|(طلبي|اوردري)|order status|my order|track/i.test(chNorm(text) + ' ' + text)) return chOrderStatus();
+  if (!id && CH.ai) { CH.log.push({ who: 'bot', html: '<i>' + esc(chL('بكتب...', 'Typing...')) + '</i>' }); chPaint(); let ans = null; try { const r = await api('/api/chat/ask', 'POST', { q: text, h: CH.hist.slice(-4) }); ans = r.answer || null; } catch {} CH.log.pop();
+    if (ans) { CH.hist.push({ r: 'user', t: text }, { r: 'assistant', t: ans }); return chAdd('bot', esc(ans).replace(/\n/g, '<br>') + `<div class="cn">${esc(chL('رد آلي، للتأكيد كلّم حد من الفريق.', 'Automated reply. Confirm with our team if needed.'))}</div>` + chHuman(text)); } }
+  const f = id ? CH.faq.find(x => x.id === id) : chMatch(text);
+  if (f) chAdd('bot', esc(chL(f.a, f.ae)) + chHuman(text));
+  else chAdd('bot', esc(chL('مش متأكد إني فهمت سؤالك. اختار من الأسئلة السريعة تحت، أو كلّم حد من الفريق على واتساب وهيرد عليك.', 'I am not sure I understood. Pick a quick question below, or talk to our team on WhatsApp.')) + chHuman(text, true));
+}
+const chHuman = (q, big) => `<br><a class="cl wa${big ? ' big' : ''}" href="${chWa(q)}" target="_blank" rel="noopener">${esc(chL('كلّم حد على واتساب', 'Talk to a person on WhatsApp'))}</a>`;
+function chSend() { const i = $('#chin'); if (!i) return; const v = i.value; i.value = ''; chAsk(v); }
+function chChips() { return (CH.faq || []).map(f => `<button class="chip2" onclick="chAsk('${esc(chL(f.q, f.qe)).replace(/'/g, '&#39;')}','${f.id}')">${esc(chL(f.q, f.qe))}</button>`).join('') + `<button class="chip2" onclick="chAsk('${chL('حالة طلبي', 'My order status')}','status')">${chL('حالة طلبي', 'My order status')}</button>`; }
+async function chOpen() {
+  await chLoad(); CH.open = true; let p = $('#chpanel'); if (p) p.remove();
+  if (!CH.log.length) CH.log.push({ who: 'bot', html: esc(chL('أهلاً بيك في تِكمو 👋 اسألني عن الطلب أو الدفع أو التوصيل، أو اختار من الأسئلة السريعة.', 'Welcome to Tekmoo 👋 Ask about ordering, payment or delivery, or pick a quick question.')) });
+  p = document.createElement('div'); p.id = 'chpanel'; p.setAttribute('role', 'dialog'); p.setAttribute('dir', LANG === 'en' ? 'ltr' : 'rtl');
+  p.innerHTML = `<div class="chh"><b>${esc(chL('مساعد تِكمو', 'Tekmoo assistant'))}</b><button onclick="chClose()" aria-label="close">✕</button></div><div id="chlog"></div><div class="chq">${chChips()}</div>
+  <div class="chf"><input id="chin" maxlength="200" autocomplete="off" placeholder="${esc(chL('اكتب سؤالك...', 'Type your question...'))}" onkeydown="if(event.key==='Enter')chSend()"><button class="chs" onclick="chSend()" aria-label="send">➤</button></div>
+  <a class="chp" href="${chWa(CH.last)}" target="_blank" rel="noopener" onclick="this.href=chWa(CH.last)">${esc(chL('كلّم حد على واتساب', 'Talk to a person on WhatsApp'))}</a>`;
+  document.body.appendChild(p); chPaint(); const b = $('#chbtn'); if (b) b.classList.add('on');
+}
+function chClose() { CH.open = false; const p = $('#chpanel'); if (p) p.remove(); const b = $('#chbtn'); if (b) b.classList.remove('on'); }
+function chToggle() { CH.open ? chClose() : chOpen(); }
+(function chInit() { const b = document.createElement('button'); b.id = 'chbtn'; b.setAttribute('aria-label', chL('مساعدة', 'Help')); b.onclick = chToggle; b.innerHTML = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 11h7M8.5 14h4.5"/></svg>'; document.body.appendChild(b); })();
+async function chAdminPanel() {
+  const app = $('#app'); if (!app || view !== 'admin') return; await chLoad(); const r = await api('/api/chat'); CH.faq = r.faq;
+  const d = document.createElement('div'); d.className = 'panel'; d.innerHTML = `<h2>ردود الشات التلقائي</h2><div id="chm"></div><p class="small">عدّل الإجابات اللي العميل بيشوفها في الشات. لو فضيت خانة بيرجع الرد الافتراضي.</p>` +
+    CH.faq.map(f => `<label>${esc(f.q)}</label><textarea id="cha_${f.id}" rows="3">${esc(f.a)}</textarea>`).join('') + `<div class="row"><button class="btn" onclick="chSave()">حفظ الردود</button></div>`; app.appendChild(d);
+}
+async function chSave() { try { const a = {}; CH.faq.forEach(f => { a[f.id] = ($('#cha_' + f.id) || {}).value || ''; }); const r = await api('/api/chat', 'PUT', { answers: a }); CH.faq = r.faq; $('#chm').innerHTML = msg('اتحفظت الردود ✓', 'ok'); } catch (e) { $('#chm').innerHTML = msg(e.message); } }

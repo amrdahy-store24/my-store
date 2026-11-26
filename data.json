@@ -1,0 +1,43 @@
+{
+ "nextId": 10,
+ "users": [
+  {
+   "id": 1,
+   "username": "admin",
+   "salt": "88f1b9d4f4db98cacfa57e9b1d0d539f",
+   "hash": "7ab6e312a46e7afad310d16e11476d12af47f5471319c0f0c17be04a740d83d8",
+   "role": "admin"
+  }
+ ],
+ "products": [
+  {
+   "id": 2,
+   "name": "سماعات بلوتوث",
+   "price": 450,
+   "stock": 20,
+   "description": "سماعات لاسلكية بصوت نقي وبطارية تعمل 20 ساعة.",
+   "image": "",
+   "category": "إلكترونيات"
+  },
+  {
+   "id": 3,
+   "name": "ساعة ذكية",
+   "price": 900,
+   "stock": 10,
+   "description": "ساعة ذكية بشاشة ملونة وتتبع للنشاط.",
+   "image": "",
+   "category": "إلكترونيات"
+  },
+  {
+   "id": 4,
+   "name": "حقيبة ظهر",
+   "price": 300,
+   "stock": 15,
+   "description": "حقيبة متينة مقاومة للماء تناسب اللابتوب.",
+   "image": "",
+   "category": "إلكترونيات"
+  }
+ ],
+ "orders": [],
+ "sessions": {}
+}
