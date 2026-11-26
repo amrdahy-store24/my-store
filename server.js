@@ -385,8 +385,13 @@ function start() { http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   try {
     if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/img/')) return await api(req, res, url);
+    if (url.pathname === '/robots.txt' || url.pathname === '/sitemap.xml') {
+      const base = process.env.PUBLIC_URL || ('https://' + (req.headers.host || 'tekmoo.onrender.com'));
+      res.writeHead(200, { 'Content-Type': url.pathname === '/robots.txt' ? 'text/plain; charset=utf-8' : 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+      return res.end(url.pathname === '/robots.txt' ? `User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: ${base}/sitemap.xml\n` : `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url></urlset>\n`);
+    }
     const f = url.pathname === '/' ? 'index.html' : path.basename(url.pathname);
-    const fp = ['index.html','style.css','app.js','i18n.js','favicon.svg','apple-touch-icon.png'].includes(f) ? path.join(__dirname, f) : '/nonexistent';
+    const fp = ['index.html','style.css','app.js','i18n.js','favicon.svg','apple-touch-icon.png','og.png'].includes(f) ? path.join(__dirname, f) : '/nonexistent';
     if (!fs.existsSync(fp)) { res.writeHead(404); return res.end('404'); }
     const ext = path.extname(fp), versioned = url.searchParams.has('v') && ext !== '.html';
     res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=86400' }); fs.createReadStream(fp).pipe(res);
