@@ -49,6 +49,7 @@ function renderMenu() {
   <div class="ms"><h4>الدعم الفني</h4>${wa ? link('spark', 'محتاج مساعدة؟ كلّمنا واتساب', `https://wa.me/${wa}?text=${encodeURIComponent('محتاج مساعدة في المتجر')}`) : ''}</div>
   <div class="ms"><h4>تواصل معنا</h4>${wa ? link('user', 'واتساب', `https://wa.me/${wa}`, '+' + wa) + link('truck', 'اتصال', `tel:+${wa}`, '+' + wa) : ''}</div>
   <div class="ms"><h4>الإعدادات</h4><div class="mset"><span>اللغة</span><div class="seg"><button class="${LANG === 'ar' ? 'on' : ''}" onclick="setLang('ar')">العربية</button><button class="${LANG === 'en' ? 'on' : ''}" onclick="setLang('en')">English</button></div></div>
+  <div class="mset"><span>الدولة</span><select class="csel" onchange="setCountry(this.value)">${cOpts(COUNTRY)}</select></div>
   <div class="mset"><span>المظهر</span><div class="seg"><button class="${dark ? '' : 'on'}" onclick="setTheme(false)">فاتح</button><button class="${dark ? 'on' : ''}" onclick="setTheme(true)">داكن</button></div></div></div></aside>`;
   document.body.appendChild(el);
 }
@@ -95,8 +96,8 @@ function shop(f) {
   cat = ''; slI = 0; setTimeout(slStart, 0); $('#app').innerHTML = f + sliderHtml() + `<div class="perks"><div class="perk"><i>${ic('truck', 24)}</i><div><b>توصيل سريع</b><span>لحد باب البيت</span></div></div><div class="perk"><i>${ic('cash', 24)}</i><div><b>الدفع عند الاستلام</b><span>ادفع وانت بتستلم</span></div></div><div class="perk"><i>${ic('shield', 24)}</i><div><b>جودة مضمونة</b><span>منتجات مختارة بعناية</span></div></div></div>
   <div class="sh" id="prods"><h3>المنتجات<span>${products.length} منتج</span></h3><div class="search"><input id="q" placeholder="ابحث عن منتج..." oninput="filt()"></div></div>${cats().length > 0 ? `<div class="chips"><button class="chip on" data-c="" onclick="setCat('')">الكل</button>${cats().map(c => `<button class="chip" data-c="${esc(c)}" onclick="setCat(this.dataset.c)">${esc(c)}</button>`).join('')}</div>` : ''}` +
   (products.length ? `<div class="grid">${products.map(p => `<div class="card" onclick="openProd(${p.id})" data-c="${esc(p.category || '')}" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
-  <div class="b"><div class="nm">${esc(p.name)}</div><div class="small">${esc(p.description)}</div><div class="price">${money(p.price)}<small>ج.م</small></div>
-  <button class="btn" ${p.stock < 1 ? 'disabled' : ''} onclick="event.stopPropagation();addCart(${p.id})">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button></div></div>`).join('')}</div>` : `<div class="panel empty"><div class="e">${ic('bag', 56)}</div>مفيش منتجات حاليًا، ارجع قريب.</div>`);
+  <div class="b"><div class="nm">${esc(p.name)}</div><div class="small">${esc(p.description)}</div><div class="price">${cPrice(p) == null ? '<small>غير متاح في ' + cnm(COUNTRY) + ' حاليًا</small>' : money(cPrice(p)) + '<small>' + sym() + '</small>'}</div>
+  <button class="btn" ${p.stock < 1 || cPrice(p) == null ? 'disabled' : ''} onclick="event.stopPropagation();addCart(${p.id})">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button></div></div>`).join('')}</div>` : `<div class="panel empty"><div class="e">${ic('bag', 56)}</div>مفيش منتجات حاليًا، ارجع قريب.</div>`);
 }
 let after = null;
 function needLogin(next, text) { after = next; flash = msg(text); go('login'); }
@@ -114,50 +115,61 @@ function prodView(f, id) {
   const specs = lines.filter(l => /^[^:：]{1,30}[:：]\s*\S/.test(l)).map(l => l.split(/[:：]/)), desc = lines.filter(l => !/^[^:：]{1,30}[:：]\s*\S/.test(l));
   const st = p.stock < 1 ? '<span class="stk o">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="stk l">باقي ${p.stock} فقط</span>` : '<span class="stk g">متوفر</span>';
   $('#app').innerHTML = f + `<a class="back" onclick="go('shop')">→ رجوع للمنتجات</a><div class="pd"><div class="pdi ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}</div>
-  <div class="pdb">${p.category ? `<span class="catpill">${esc(p.category)}</span>` : ''}<h1>${esc(p.name)}</h1><div class="pdp">${money(p.price)}<small>ج.م</small></div>${st}
+  <div class="pdb">${p.category ? `<span class="catpill">${esc(p.category)}</span>` : ''}<h1>${esc(p.name)}</h1><div class="pdp">${cPrice(p) == null ? '<small>غير متاح في ' + cnm(COUNTRY) + ' حاليًا</small>' : money(cPrice(p)) + '<small>' + sym() + '</small>'}</div>${st}
   ${desc.length ? `<h4>الوصف</h4><p class="pdd">${desc.map(esc).join('<br>')}</p>` : ''}
   ${specs.length ? `<h4>المواصفات</h4><table class="spec">${specs.map(r => `<tr><th>${esc(r[0].trim())}</th><td>${esc(r.slice(1).join(':').trim())}</td></tr>`).join('')}</table>` : ''}
   <div class="cod" style="margin:14px 0">${ic('cash', 18)} الدفع عند الاستلام</div>
-  <button class="btn wide" ${p.stock < 1 ? 'disabled' : ''} onclick="addCart(${p.id}, true)">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button>
+  <button class="btn wide" ${p.stock < 1 || cPrice(p) == null ? 'disabled' : ''} onclick="addCart(${p.id}, true)">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button>
   <button class="btn wide ghost" style="margin-top:8px" onclick="go('cart')">عرض السلة</button></div></div>`;
 }
-let SHIP = null; const shipLoad = () => api('/api/shipping').then(r => { SHIP = r.tiers; if (view === 'cart') go('cart'); }).catch(() => {});
+const CNT = { EG: { ar: 'مصر', en: 'Egypt', sym: 'ج.م' }, SA: { ar: 'السعودية', en: 'Saudi Arabia', sym: 'ر.س' }, AE: { ar: 'الإمارات', en: 'UAE', sym: 'د.إ' }, IQ: { ar: 'العراق', en: 'Iraq', sym: 'د.ع' }, OM: { ar: 'عُمان', en: 'Oman', sym: 'ر.ع' } };
+let COUNTRY = (() => { try { const c = localStorage.getItem('country'); return CNT[c] ? c : 'EG'; } catch { return 'EG'; } })();
+const sym = () => CNT[COUNTRY].sym, cnm = c => LANG === 'en' ? CNT[c].en : CNT[c].ar;
+const cPrice = p => COUNTRY === 'EG' ? p.price : (p.prices && +p.prices[COUNTRY] > 0 ? +p.prices[COUNTRY] : null);
+const cm = n => money(n) + ' ' + sym();
+const cOpts = sel => Object.keys(CNT).map(c => `<option value="${c}"${c === sel ? ' selected' : ''}>${esc(cnm(c))}</option>`).join('');
+function setCountry(c) { if (!CNT[c]) return; COUNTRY = c; try { localStorage.setItem('country', c); } catch {} CH.hist = []; closeMenu(); go(view, curArg, true); }
+let SHIPC = null;
+const areaSel = () => COUNTRY !== 'EG' ? '' : `<label>المحافظة / المنطقة</label><select id="area" onchange="shipPick(this.value)"><option value="">اختار...</option>${shipAreas().map(o => `<option value="${esc(o.n)}"${o.n === shipSel() ? ' selected' : ''}>${esc(o.n)} - ${money(o.fee)} ج.م</option>`).join('')}</select>`;
+let SHIP = null; const shipLoad = () => api('/api/shipping').then(r => { SHIP = r.tiers; SHIPC = r.countries; if (view === 'cart') go('cart'); }).catch(() => {});
 const shipAreas = () => (SHIP || []).flatMap(t => t.areas.map(n => ({ n, fee: t.fee }))).sort((x, y) => x.n.localeCompare(y.n, 'ar'));
 const shipSel = () => { try { return localStorage.getItem('area') || ''; } catch { return ''; } };
-function shipPick(v) { try { localStorage.setItem('area', v); } catch {} const x = shipAreas().find(o => o.n === v), t = +($('#subt') || {}).dataset.v || 0; $('#shipv').textContent = x ? money(x.fee) + ' ج.م' : 'اختار المحافظة'; $('#totv').textContent = money(t + (x ? x.fee : 0)) + ' ج.م'; }
+function shipPick(v) { try { if (v) localStorage.setItem('area', v); } catch {} const t = +($('#subt') || {}).dataset.v || 0; let fee = null;
+  if (COUNTRY === 'EG') { const x = shipAreas().find(o => o.n === v); fee = x ? x.fee : null; } else fee = SHIPC && SHIPC[COUNTRY] ? SHIPC[COUNTRY].ship : null;
+  $('#shipv').textContent = fee != null ? cm(fee) : COUNTRY === 'EG' ? ($('#area') ? 'اختار المحافظة' : 'يتحدد عند التأكيد') : 'هيتحدد قريب'; $('#totv').textContent = cm(t + (fee || 0)); }
 function cartView(f) {
   if (!SHIP) { shipLoad(); }
   cart = cart.filter(i => products.some(p => p.id === i.id)); saveCart(); nav();
   if (!cart.length) return $('#app').innerHTML = f + `<div class="panel empty"><div class="e">${ic('cart', 56)}</div><h2>السلة فاضية</h2><button class="btn" onclick="go(\'shop\')">ابدأ التسوّق</button></div>`;
   const rows = cart.map(i => { const p = products.find(x => x.id === i.id); return `<div class="ci"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div>
-  <div><b>${esc(p.name)}</b><div class="p">${money(p.price)} ج.م للقطعة</div><div class="stp" style="margin-top:6px"><button onclick="setQty(${i.id},${i.qty + 1})">+</button><span>${i.qty}</span><button onclick="setQty(${i.id},${i.qty - 1})">−</button></div></div>
-  <div><div class="tot">${money(p.price * i.qty)} ج.م</div><button class="rm" onclick="setQty(${i.id},0)">${ic('trash', 14)} حذف</button></div></div>`; }).join('');
-  const total = cart.reduce((s, i) => s + products.find(x => x.id === i.id).price * i.qty, 0);
+  <div><b>${esc(p.name)}</b><div class="p">${cPrice(p) == null ? 'غير متاح في ' + cnm(COUNTRY) : cm(cPrice(p))} للقطعة</div><div class="stp" style="margin-top:6px"><button onclick="setQty(${i.id},${i.qty + 1})">+</button><span>${i.qty}</span><button onclick="setQty(${i.id},${i.qty - 1})">−</button></div></div>
+  <div><div class="tot">${cm((cPrice(p) || 0) * i.qty)}</div><button class="rm" onclick="setQty(${i.id},0)">${ic('trash', 14)} حذف</button></div></div>`; }).join('');
+  const total = cart.reduce((s, i) => s + (cPrice(products.find(x => x.id === i.id)) || 0) * i.qty, 0); const bad = cart.some(i => cPrice(products.find(x => x.id === i.id)) == null);
   $('#app').innerHTML = f + `<h2 style="margin:6px 0 14px;font-weight:800">سلة المشتريات</h2><div class="cartwrap"><div class="panel">${rows}</div><div class="panel sum"><h2>ملخص الطلب</h2>
-  <div class="ln"><span>عدد القطع</span><span>${cartCount()}</span></div><div class="ln"><span>المنتجات</span><span id="subt" data-v="${total}">${money(total)} ج.م</span></div><div class="ln"><span>التوصيل</span><span id="shipv">اختار المحافظة</span></div><div class="ln big"><span>الإجمالي</span><span id="totv">${money(total)} ج.م</span></div>
-  ${me ? `<div id="m"></div><label>المحافظة / المنطقة</label><select id="area" onchange="shipPick(this.value)"><option value="">اختار...</option>${shipAreas().map(o => `<option value="${esc(o.n)}"${o.n === shipSel() ? ' selected' : ''}>${esc(o.n)} - ${money(o.fee)} ج.م</option>`).join('')}</select><label>العنوان</label><input id="addr" placeholder="المدينة، الشارع، رقم العمارة"><label>رقم التليفون</label><input id="ph" inputmode="tel" placeholder="01xxxxxxxxx"><div class="cod">${ic('cash', 18)} الدفع عند الاستلام</div><button class="btn wide" onclick="checkout()">تأكيد الطلب</button>`
+  <div class="ln"><span>عدد القطع</span><span>${cartCount()}</span></div><div class="ln"><span>المنتجات</span><span id="subt" data-v="${total}">${cm(total)}</span></div><div class="ln"><span>التوصيل</span><span id="shipv">اختار المحافظة</span></div><div class="ln big"><span>الإجمالي</span><span id="totv">${cm(total)}</span></div>
+  ${me ? `<div id="m"></div>${areaSel()}<label>العنوان</label><input id="addr" placeholder="المدينة، الشارع، رقم العمارة"><label>رقم التليفون</label><input id="ph" inputmode="tel" dir="ltr" style="text-align:right" placeholder="${COUNTRY === 'EG' ? '01xxxxxxxxx' : '+9665xxxxxxxx'}"><div class="cod">${ic('cash', 18)} الدفع عند الاستلام</div>${bad ? `<p class="small" style="color:var(--bad,#c33)">فيه منتج في السلة مش متاح في ${cnm(COUNTRY)} حاليًا، احذفه عشان تكمل.</p>` : ''}<button class="btn wide" ${bad ? 'disabled' : ''} onclick="checkout()">تأكيد الطلب</button>`
        : '<p class="small">لازم تسجل دخول عشان تكمل الطلب.</p><button class="btn wide" onclick="go(\'login\')">دخول</button>'}</div></div>`;
-  if ($('#area')) shipPick($('#area').value);
+  shipPick(($('#area') || {}).value || '');
 }
 function setQty(id, q) { q = parseInt(q, 10) || 0; const p = products.find(x => x.id === id);
   if (q > p.stock) { q = p.stock; flash = msg('الكمية المتاحة ' + p.stock + ' فقط'); }
   cart = q > 0 ? cart.map(i => i.id === id ? { ...i, qty: q } : i) : cart.filter(i => i.id !== id); saveCart(); go('cart'); }
 async function checkout() {
-  try { await api('/api/orders', 'POST', { items: cart, area: $('#area').value, address: $('#addr').value, phone: $('#ph').value });
+  try { await api('/api/orders', 'POST', { items: cart, country: COUNTRY, area: ($('#area') || {}).value, address: $('#addr').value, phone: $('#ph').value });
     cart = []; saveCart(); flash = msg('تم تسجيل طلبك بنجاح ✓ هنتواصل معاك قريب', 'ok'); go('orders'); } catch (e) { $('#m').innerHTML = msg(e.message); }
 }
 async function loadCap() { const el = document.getElementById('cap'); if (!el) return; try { const c = await api('/api/captcha'); window.capTok = c.token; el.innerHTML = c.svg + '<button type="button" class="caprf" onclick="loadCap()" aria-label="تحديث">↻</button>'; const i = document.getElementById('cp'); if (i) i.value = ''; } catch (e) { el.textContent = 'تعذّر تحميل الكود، اضغط تحديث'; } }
 function authView(v, f) {
   const reg = v === 'register';
   $('#app').innerHTML = `<div class="panel narrow"><div class="ai">${WM('big')}</div><h2>${reg ? 'إنشاء حساب جديد' : 'أهلاً بيك تاني'}</h2><p class="small" style="margin-top:-8px">${reg ? 'سجّل في ثواني وابدأ اطلب' : 'سجّل دخولك عشان تكمل طلباتك'}</p>${f}<div id="m"></div><label>اسم المستخدم</label><input id="u" autocomplete="username" autocapitalize="none">
-  ${reg ? '<label>رقم الموبايل</label><input id="ph" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx">' : ''}<label>الباسورد</label><input id="p" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}"><label>كود التحقق (عشان نتأكد إنك مش روبوت)</label><div class="cap" id="cap"></div><input id="cp" onkeydown="if(event.key==='Enter')auth(\'${v}\')" autocomplete="off" autocapitalize="characters" maxlength="8" placeholder="اكتب الحروف اللي في الصورة" dir="ltr" style="text-align:center;letter-spacing:3px">
+  ${reg ? `<label>الدولة</label><select id="cn" onchange="$('#ph').placeholder=this.value==='EG'?'01xxxxxxxxx':'+9665xxxxxxxx'">${cOpts(COUNTRY)}</select><label>رقم الموبايل</label><input id="ph" inputmode="tel" autocomplete="tel" dir="ltr" style="text-align:right" placeholder="${COUNTRY === 'EG' ? '01xxxxxxxxx' : '+9665xxxxxxxx'}">` : ''}<label>الباسورد</label><input id="p" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}"><label>كود التحقق (عشان نتأكد إنك مش روبوت)</label><div class="cap" id="cap"></div><input id="cp" onkeydown="if(event.key==='Enter')auth(\'${v}\')" autocomplete="off" autocapitalize="characters" maxlength="8" placeholder="اكتب الحروف اللي في الصورة" dir="ltr" style="text-align:center;letter-spacing:3px">
   <button class="btn wide" onclick="auth('${v}')">${reg ? 'إنشاء الحساب' : 'دخول'}</button>
   ${reg ? '' : '<div class="alt" style="margin-top:10px"><a onclick="go(\'forgot\')">نسيت الباسورد؟</a></div>'}
   <div class="alt">${reg ? 'عندك حساب؟ <a onclick="go(\'login\')">سجّل دخول</a>' : 'مش عندك حساب؟ <a onclick="go(\'register\')">أنشئ حساب</a>'}</div></div>`;
   loadCap();
 }
 async function auth(v) {
-  try { me = (await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value, phone: v === 'register' ? $('#ph').value : undefined, captcha: $('#cp').value, captchaToken: window.capTok })).user; flash = msg('أهلاً ' + me.username, 'ok'); const a = after; after = null; if (a && me.role !== 'admin') go(a.v, a.a); else go(me.role === 'admin' ? 'admin' : 'shop'); }
+  try { me = (await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value, phone: v === 'register' ? $('#ph').value : undefined, country: v === 'register' ? $('#cn').value : undefined, captcha: $('#cp').value, captchaToken: window.capTok })).user; flash = msg('أهلاً ' + me.username, 'ok'); const a = after; after = null; if (a && me.role !== 'admin') go(a.v, a.a); else go(me.role === 'admin' ? 'admin' : 'shop'); }
   catch (e) { $('#m').innerHTML = msg(e.message); loadCap(); }
 }
 function forgotView(f) {
@@ -187,17 +199,18 @@ async function ordersView(f) {
   const { orders } = await api('/api/orders');
   $('#app').innerHTML = f + `<div class="panel"><h2>${me.role === 'admin' ? 'كل الطلبات' : 'طلباتي'}</h2>` + (orders.length ? orders.map(o => `<div class="ord"><div class="h"><b>طلب #${o.id}</b><span class="st ${stc(o.status)}">${esc(o.status)}</span></div>
   <div class="small">${esc(o.username)} • ${new Date(o.date).toLocaleString('ar-EG')}</div>
-  <div style="margin:6px 0">${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div><div><b>${money(o.total)} ج.م</b>${o.shipping ? ` <span class="small">(شحن ${money(o.shipping)})</span>` : ''} <span class="small">• ${esc(o.address)} • ${esc(o.phone)}</span></div></div>`).join('') : `<div class="empty"><div class="e">${ic('box', 56)}</div>مفيش طلبات لحد دلوقتي.</div>`) + `</div><div class="panel narrow" style="margin-top:16px"><h2>تغيير الباسورد</h2><div id="pm"></div><label>الباسورد الحالي</label><input id="op" type="password" autocomplete="current-password"><label>الباسورد الجديد</label><input id="np" type="password" autocomplete="new-password"><button class="btn wide" onclick="chPw()">حفظ الباسورد الجديد</button></div>`;
+  <div style="margin:6px 0">${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div><div><b>${money(o.total)} ${o.sym || 'ج.م'}</b>${o.shipping ? ` <span class="small">(شحن ${money(o.shipping)})</span>` : ''} <span class="small">• ${esc(o.address)} • ${esc(o.phone)}</span></div></div>`).join('') : `<div class="empty"><div class="e">${ic('box', 56)}</div>مفيش طلبات لحد دلوقتي.</div>`) + `</div><div class="panel narrow" style="margin-top:16px"><h2>تغيير الباسورد</h2><div id="pm"></div><label>الباسورد الحالي</label><input id="op" type="password" autocomplete="current-password"><label>الباسورد الجديد</label><input id="np" type="password" autocomplete="new-password"><button class="btn wide" onclick="chPw()">حفظ الباسورد الجديد</button></div>`;
 }
 let editing = null;
 async function adminView(f, tab) {
   if (!me || me.role !== 'admin') return go('login');
   const { orders } = await api('/api/orders'); const { users } = await api('/api/users'); const e = editing || {};
+  const revText = Object.entries(orders.filter(o => o.status !== 'ملغي').reduce((m, o) => { const k = o.sym || 'ج.م'; m[k] = (m[k] || 0) + Number(o.total); return m; }, {})).map(([k, v]) => money(v) + ' ' + k).join(' + ') || '0';
   const rev = orders.filter(o => o.status !== 'ملغي').reduce((s, o) => s + Number(o.total), 0);
   $('#app').innerHTML = f + `<h2 style="margin:6px 0 14px;font-weight:800">لوحة التحكم</h2><div class="stats"><div class="stat"><span>المنتجات</span><b>${products.length}</b></div><div class="stat"><span>الطلبات</span><b>${orders.length}</b></div>
-  <div class="stat"><span>طلبات جديدة</span><b>${orders.filter(o => o.status === 'جديد').length}</b></div><div class="stat"><span>إجمالي المبيعات</span><b>${money(rev)} ج.م</b></div><div class="stat"><span>العملاء</span><b>${users.length}</b></div></div>
+  <div class="stat"><span>طلبات جديدة</span><b>${orders.filter(o => o.status === 'جديد').length}</b></div><div class="stat"><span>إجمالي المبيعات</span><b>${revText}</b></div><div class="stat"><span>العملاء</span><b>${users.length}</b></div></div>
   <div class="adm"><div class="panel"><h2>${editing ? 'تعديل منتج' : 'إضافة منتج'}</h2><div id="m"></div>
-  <label>الاسم</label><input id="n" value="${esc(e.name)}"><label>السعر (ج.م)</label><input id="pr" type="number" min="0" step="0.01" value="${e.price ?? ''}">
+  <label>الاسم</label><input id="n" value="${esc(e.name)}"><label>السعر في مصر (ج.م)</label><input id="pr" type="number" min="0" step="0.01" value="${e.price ?? ''}">${['SA', 'AE', 'IQ', 'OM'].map(c => `<label>السعر في ${CNT[c].ar} (${CNT[c].sym}) - اختياري</label><input id="pr_${c}" type="number" min="0" step="0.01" value="${(e.prices || {})[c] ?? ''}">`).join('')}
   <label>القسم</label><input id="cg" list="cgl" value="${esc(e.category)}" placeholder="اختار قسم أو اكتب قسم جديد"><datalist id="cgl">${catList().map(c => `<option value="${esc(c)}">`).join('')}</datalist><label>الكمية المتاحة</label><input id="st" type="number" min="0" value="${e.stock ?? ''}"><label>الوصف</label><textarea id="d" rows="3">${esc(e.description)}</textarea>
   <label>صورة المنتج (اختياري - ارفع صورة أو حط رابط)</label><input id="img" value="${esc(e.image && !e.image.startsWith('data:') && !e.image.startsWith('/img/') ? e.image : '')}" placeholder="https://..."><input type="file" id="file" accept="image/*">
   <div class="row"><button class="btn" onclick="saveProd()">${editing ? 'حفظ التعديل' : '＋ إضافة المنتج'}</button>${editing ? '<button class="btn gray" onclick="editing=null;go(\'admin\')">إلغاء</button>' : ''}</div></div>
@@ -206,7 +219,7 @@ async function adminView(f, tab) {
   <label>عنوان صغير فوق كل عرض (اختياري، مثلاً: عرض)</label><input id="ot" value="${esc(offer && offer.title)}"><label>نص العروض (كل سطر عرض = شريحة منفصلة في السلايدر)</label><textarea id="ox" rows="4">${esc(offer && offer.text)}</textarea>
   
   <button class="btn" onclick="saveOffer()">حفظ العرض</button></div>
-  <div class="panel"><h2>المنتجات (${products.length})</h2>${products.map(p => `<div class="pr"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div><div><b>${esc(p.name)}</b><div class="sm">${money(p.price)} ج.م • الكمية ${p.stock}</div></div>
+  <div class="panel"><h2>المنتجات (${products.length})</h2>${products.map(p => `<div class="pr"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div><div><b>${esc(p.name)}</b><div class="sm">${money(p.price)} ج.م${Object.keys(p.prices || {}).length ? ' + ' + Object.keys(p.prices).join('/') : ''} • الكمية ${p.stock}</div></div>
   <div class="row"><button class="btn gray" onclick="editProd(${p.id})">تعديل</button><button class="btn red" onclick="delProd(${p.id})">حذف</button></div></div>`).join('') || '<div class="empty">لسه مفيش منتجات.</div>'}</div>
   <div class="panel"><h2>العملاء المسجلين (${users.length})</h2>${users.map(x => `<div class="pr" style="grid-template-columns:1fr auto"><div><b>${esc(x.username)}</b>${x.resetAt ? ' <span class="st s2">طلب نسيان باسورد</span>' : ''}<div class="sm" dir="ltr" style="text-align:right">${esc(x.phone) || 'بدون رقم'} • ${x.createdAt ? new Date(x.createdAt).toLocaleDateString('en-GB') : '-'}</div><div id="rs${x.id}"></div></div>
   <div class="row"><button class="btn red" onclick="delUser(${x.id},'${esc(x.username)}')">حذف</button><button class="btn gray" onclick="resetUser(${x.id},'${esc(x.username)}','${esc(x.phone)}')">باسورد مؤقت</button></div></div>`).join('') || '<div class="empty">لسه مفيش عملاء.</div>'}</div>
@@ -226,12 +239,12 @@ async function saveProd() {
   try {
     let image = $('#img').value.trim(); const file = $('#file').files[0];
     if (file) image = await readFile(file); else if (!image && editing && (editing.image.startsWith('data:') || editing.image.startsWith('/img/'))) image = editing.image;
-    const data = { name: $('#n').value, price: $('#pr').value, stock: $('#st').value, description: $('#d').value, image, category: $('#cg').value };
+    const data = { name: $('#n').value, price: $('#pr').value, prices: Object.fromEntries(['SA', 'AE', 'IQ', 'OM'].map(c => [c, ($('#pr_' + c) || {}).value || ''])), stock: $('#st').value, description: $('#d').value, image, category: $('#cg').value };
     if (editing) await api('/api/products/' + editing.id, 'PUT', data); else await api('/api/products', 'POST', data);
     flash = msg(editing ? 'اتعدل ✓' : 'اتضاف ✓', 'ok'); editing = null; go('admin');
   } catch (e) { $('#m').innerHTML = msg(e.message); }
 }
-(async () => { const m = api('/api/me').then(r => { me = r.user; }).catch(() => {}); await Promise.all([m, loadData()]); go('shop'); })();
+(async () => { const m = api('/api/me').then(r => { me = r.user; try { if (me && me.country && !localStorage.getItem('country')) COUNTRY = me.country; } catch {} }).catch(() => {}); await Promise.all([m, loadData()]); go('shop'); })();
 /* ===== Chat helper: rule-based auto replies + "talk to a person" on WhatsApp (no external services) ===== */
 const CH = { faq: null, open: false, log: [], last: '', hist: [], ai: false };
 const chL = (a, e) => LANG === 'en' ? e : a;
@@ -255,7 +268,7 @@ async function chOrderStatus() {
     const { orders } = await api('/api/orders'); const mine = me.role === 'admin' ? [] : orders;
     if (!mine.length) return chAdd('bot', esc(chL('مفيش طلبات على حسابك لسه.', 'You have no orders yet.')));
     const o = mine[0]; const dt = o.createdAt ? new Date(o.createdAt).toLocaleDateString(LANG === 'en' ? 'en-GB' : 'ar-EG') : '';
-    chAdd('bot', esc(chL(`آخر طلب ليك رقم #${o.id}${dt ? ' بتاريخ ' + dt : ''}: الحالة «${o.status}»، الإجمالي ${money(o.total)} ج.م.`, `Your latest order #${o.id}${dt ? ' on ' + dt : ''}: status "${o.status}", total ${money(o.total)} EGP.`)) + `<br><a class="cl" onclick="chClose();go('orders')">${esc(chL('كل طلباتي', 'All my orders'))}</a>`);
+    chAdd('bot', esc(chL(`آخر طلب ليك رقم #${o.id}${dt ? ' بتاريخ ' + dt : ''}: الحالة «${o.status}»، الإجمالي ${money(o.total)} ${o.sym || 'ج.م'}.`, `Your latest order #${o.id}${dt ? ' on ' + dt : ''}: status "${o.status}", total ${money(o.total)} ${o.currency || 'EGP'}.`)) + `<br><a class="cl" onclick="chClose();go('orders')">${esc(chL('كل طلباتي', 'All my orders'))}</a>`);
   } catch { chAdd('bot', esc(chL('معرفتش أجيب الطلبات دلوقتي، جرب تاني.', 'Could not load your orders, try again.'))); }
 }
 const chSens = t => /\d[\d\s\-.]{5,}\d|@|https?:\/\/|password|passwd|cvv|otp|باسورد|كلمة\s*(ال)?(سر|مرور)|(رقم|كود)\s*(الكارت|البطاقة|الفيزا|التحقق)|#\s?\d+|(order|طلب|اوردر|أوردر)\s*(id|no\.?|number|رقم|#)?\s*\d+/i.test(t);
@@ -264,12 +277,13 @@ async function chAsk(text, id) {
   if (!id && chSens(text)) { CH.last = ''; chAdd('me', '•••'); return chAdd('bot', esc(chL('لحمايتك، متكتبش أرقام تليفون أو عناوين أو بيانات دفع أو أرقام طلبات أو كلمات سر هنا. اسأل سؤالك من غيرها، أو كلّم حد من الفريق على واتساب.', 'For your safety, please do not type phone numbers, addresses, payment details, order numbers or passwords here. Ask without them, or talk to our team on WhatsApp.')) + chHuman('', true)); }
   CH.last = text;
   chAdd('me', esc(text)); if (id === 'status' || /(حاله|حالة|فين).*(طلب|اوردر)|(طلبي|اوردري)|order status|my order|track/i.test(chNorm(text) + ' ' + text)) return chOrderStatus();
-  if (!id && CH.ai) { CH.log.push({ who: 'bot', html: '<i>' + esc(chL('بكتب...', 'Typing...')) + '</i>' }); chPaint(); let ans = null; try { const r = await api('/api/chat/ask', 'POST', { q: text, h: CH.hist.slice(-4) }); ans = r.answer || null; } catch {} CH.log.pop();
+  if (!id && CH.ai) { CH.log.push({ who: 'bot', html: '<i>' + esc(chL('بكتب...', 'Typing...')) + '</i>' }); chPaint(); let ans = null; try { const r = await api('/api/chat/ask', 'POST', { q: text, h: CH.hist.slice(-4), c: COUNTRY }); ans = r.answer || null; } catch {} CH.log.pop();
     if (ans) { CH.hist.push({ r: 'user', t: text }, { r: 'assistant', t: ans }); return chAdd('bot', esc(ans).replace(/\n/g, '<br>') + `<div class="cn">${esc(chL('رد آلي، للتأكيد كلّم حد من الفريق.', 'Automated reply. Confirm with our team if needed.'))}</div>` + chHuman(text)); } }
   const f = id ? CH.faq.find(x => x.id === id) : chMatch(text);
-  if (f) chAdd('bot', esc(chL(f.a, f.ae)) + chHuman(text));
+  if (f) chAdd('bot', esc(chFaqText(f)).replace(/\n/g, '<br>') + chHuman(text));
   else chAdd('bot', esc(chL('مش متأكد إني فهمت سؤالك. اختار من الأسئلة السريعة تحت، أو كلّم حد من الفريق على واتساب وهيرد عليك.', 'I am not sure I understood. Pick a quick question below, or talk to our team on WhatsApp.')) + chHuman(text, true));
 }
+const chFaqText = f => { if (f.id === 'delivery' && COUNTRY !== 'EG') { const s = SHIPC && SHIPC[COUNTRY] ? SHIPC[COUNTRY].ship : null; return s == null ? chL('الطلب لـ' + CNT[COUNTRY].ar + ' لسه مش متاح، مصاريف الشحن هتتحدد قريب. كلّم حد على واتساب.', 'Orders to ' + CNT[COUNTRY].en + ' are not open yet; shipping will be set soon. Talk to our team on WhatsApp.') : chL(`الشحن لـ${CNT[COUNTRY].ar}: ${cm(s)} ثابت. مدة التوصيل بتتأكد على واتساب.`, `Shipping to ${CNT[COUNTRY].en}: ${cm(s)} flat. Delivery time is confirmed on WhatsApp.`); } return chL(f.a, f.ae); };
 const chHuman = (q, big) => `<br><a class="cl wa${big ? ' big' : ''}" href="${chWa(q)}" target="_blank" rel="noopener">${esc(chL('كلّم حد على واتساب', 'Talk to a person on WhatsApp'))}</a>`;
 function chSend() { const i = $('#chin'); if (!i) return; const v = i.value; i.value = ''; chAsk(v); }
 function chChips() { return (CH.faq || []).map(f => `<button class="chip2" onclick="chAsk('${esc(chL(f.q, f.qe)).replace(/'/g, '&#39;')}','${f.id}')">${esc(chL(f.q, f.qe))}</button>`).join('') + `<button class="chip2" onclick="chAsk('${chL('حالة طلبي', 'My order status')}','status')">${chL('حالة طلبي', 'My order status')}</button>`; }
@@ -290,8 +304,8 @@ async function chAdminPanel() {
   const app = $('#app'); if (!app || view !== 'admin') return; await chLoad(); const r = await api('/api/chat'); CH.faq = r.faq;
   const d = document.createElement('div'); d.className = 'panel'; d.innerHTML = `<h2>ردود الشات التلقائي</h2><div id="chm"></div><p class="small">عدّل الإجابات اللي العميل بيشوفها في الشات. لو فضيت خانة بيرجع الرد الافتراضي.</p>` +
     CH.faq.map(f => `<label>${esc(f.q)}</label><textarea id="cha_${f.id}" rows="3">${esc(f.a)}</textarea>`).join('') + `<div class="row"><button class="btn" onclick="chSave()">حفظ الردود</button></div>`; app.appendChild(d);
-  try { const sr = await api('/api/shipping'); const e = document.createElement('div'); e.className = 'panel'; e.innerHTML = `<h2>مصاريف الشحن حسب المحافظة</h2><div id="shm"></div>` + sr.tiers.map(t => `<label>${esc(t.areas.join('، '))}</label><input id="shf_${t.id}" inputmode="numeric" value="${t.fee}">`).join('') + `<div class="row"><button class="btn" onclick="shSave()">حفظ الشحن</button></div>`; app.appendChild(e); } catch {}
+  try { const sr = await api('/api/shipping'); const e = document.createElement('div'); e.className = 'panel'; e.innerHTML = `<h2>مصاريف الشحن حسب المحافظة</h2><div id="shm"></div>` + sr.tiers.map(t => `<label>${esc(t.areas.join('، '))}</label><input id="shf_${t.id}" inputmode="numeric" value="${t.fee}">`).join('') + ['SA', 'AE', 'IQ', 'OM'].map(c => `<label>شحن ${CNT[c].ar} (${CNT[c].sym}) - فاضي = الطلب غير متاح</label><input id="shc_${c}" inputmode="decimal" value="${(sr.countries[c] || {}).ship ?? ''}">`).join('') + `<div class="row"><button class="btn" onclick="shSave()">حفظ الشحن</button></div>`; app.appendChild(e); } catch {}
 }
 async function chSave() { try { const a = {}; CH.faq.forEach(f => { a[f.id] = ($('#cha_' + f.id) || {}).value || ''; }); const r = await api('/api/chat', 'PUT', { answers: a }); CH.faq = r.faq; $('#chm').innerHTML = msg('اتحفظت الردود ✓', 'ok'); } catch (e) { $('#chm').innerHTML = msg(e.message); } }
 
-async function shSave() { try { const f = {}; ['a', 'b', 'c'].forEach(k => { f[k] = $('#shf_' + k).value; }); const r = await api('/api/shipping', 'PUT', { fees: f }); SHIP = r.tiers; $('#shm').innerHTML = msg('اتحفظ الشحن ✓', 'ok'); } catch (e) { $('#shm').innerHTML = msg(e.message); } }
+async function shSave() { try { const f = {}; ['a', 'b', 'c'].forEach(k => { f[k] = $('#shf_' + k).value; }); const cs = {}; ['SA', 'AE', 'IQ', 'OM'].forEach(c => { cs[c] = $('#shc_' + c).value; }); const r = await api('/api/shipping', 'PUT', { fees: f, countries: cs }); SHIP = r.tiers; SHIPC = r.countries; $('#shm').innerHTML = msg('اتحفظ الشحن ✓', 'ok'); } catch (e) { $('#shm').innerHTML = msg(e.message); } }

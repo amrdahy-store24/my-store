@@ -225,3 +225,4 @@ html[dir=ltr] .narrow .alt,html[dir=ltr] .narrow h2,html[dir=ltr] .narrow>p{text
 .cn{font-size:11px;color:var(--mut);margin-top:4px}
 
 .chw{font-size:11px;line-height:1.5;padding:6px 12px;color:var(--muted,#888);border-top:1px solid var(--line,rgba(128,128,128,.2))}
+.csel{background:var(--card,#fff);color:inherit;border:1px solid var(--line,rgba(128,128,128,.3));border-radius:10px;padding:6px 10px;font:inherit;max-width:60%}

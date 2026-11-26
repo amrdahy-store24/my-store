@@ -1,6 +1,7 @@
 /* Arabic <-> English UI switching. Arabic is the source language; English is applied at runtime. */
 const LANG = (() => { try { return localStorage.getItem('lang') === 'en' ? 'en' : 'ar'; } catch { return 'ar'; } })();
 const EN = {
+'الدولة': 'Country', 'هيتحدد قريب': 'To be set soon', 'السعر في مصر (ج.م)': 'Price in Egypt (EGP)',
 'المحافظة / المنطقة': 'Governorate / area', 'اختار...': 'Choose...', 'اختار المحافظة': 'Choose governorate', 'المدينة، الشارع، رقم العمارة': 'City, street, building no.', 'اختار المحافظة / المنطقة': 'Choose your governorate / area', 'مصاريف الشحن حسب المحافظة': 'Shipping fees by area', 'حفظ الشحن': 'Save shipping', 'اتحفظ الشحن ✓': 'Shipping saved ✓',
 'حصل خطأ في السيرفر': 'Server error', 'حصل خطأ': 'Something went wrong', 'الوضع الفاتح': 'Light mode', 'الوضع الداكن': 'Dark mode',
 'الرئيسية': 'Home', 'السلة': 'Cart', 'لوحة التحكم': 'Dashboard', 'طلباتي': 'My orders', 'خروج': 'Log out', 'دخول': 'Log in', 'حساب جديد': 'Sign up',
