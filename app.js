@@ -121,7 +121,12 @@ function prodView(f, id) {
   <button class="btn wide" ${p.stock < 1 ? 'disabled' : ''} onclick="addCart(${p.id}, true)">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button>
   <button class="btn wide ghost" style="margin-top:8px" onclick="go('cart')">عرض السلة</button></div></div>`;
 }
+let SHIP = null; const shipLoad = () => api('/api/shipping').then(r => { SHIP = r.tiers; if (view === 'cart') go('cart'); }).catch(() => {});
+const shipAreas = () => (SHIP || []).flatMap(t => t.areas.map(n => ({ n, fee: t.fee }))).sort((x, y) => x.n.localeCompare(y.n, 'ar'));
+const shipSel = () => { try { return localStorage.getItem('area') || ''; } catch { return ''; } };
+function shipPick(v) { try { localStorage.setItem('area', v); } catch {} const x = shipAreas().find(o => o.n === v), t = +($('#subt') || {}).dataset.v || 0; $('#shipv').textContent = x ? money(x.fee) + ' ج.م' : 'اختار المحافظة'; $('#totv').textContent = money(t + (x ? x.fee : 0)) + ' ج.م'; }
 function cartView(f) {
+  if (!SHIP) { shipLoad(); }
   cart = cart.filter(i => products.some(p => p.id === i.id)); saveCart(); nav();
   if (!cart.length) return $('#app').innerHTML = f + `<div class="panel empty"><div class="e">${ic('cart', 56)}</div><h2>السلة فاضية</h2><button class="btn" onclick="go(\'shop\')">ابدأ التسوّق</button></div>`;
   const rows = cart.map(i => { const p = products.find(x => x.id === i.id); return `<div class="ci"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div>
@@ -129,15 +134,16 @@ function cartView(f) {
   <div><div class="tot">${money(p.price * i.qty)} ج.م</div><button class="rm" onclick="setQty(${i.id},0)">${ic('trash', 14)} حذف</button></div></div>`; }).join('');
   const total = cart.reduce((s, i) => s + products.find(x => x.id === i.id).price * i.qty, 0);
   $('#app').innerHTML = f + `<h2 style="margin:6px 0 14px;font-weight:800">سلة المشتريات</h2><div class="cartwrap"><div class="panel">${rows}</div><div class="panel sum"><h2>ملخص الطلب</h2>
-  <div class="ln"><span>عدد القطع</span><span>${cartCount()}</span></div><div class="ln"><span>التوصيل</span><span>يتحدد عند التأكيد</span></div><div class="ln big"><span>الإجمالي</span><span>${money(total)} ج.م</span></div>
-  ${me ? `<div id="m"></div><label>العنوان</label><input id="addr" placeholder="المحافظة، المدينة، الشارع"><label>رقم التليفون</label><input id="ph" inputmode="tel" placeholder="01xxxxxxxxx"><div class="cod">${ic('cash', 18)} الدفع عند الاستلام</div><button class="btn wide" onclick="checkout()">تأكيد الطلب</button>`
+  <div class="ln"><span>عدد القطع</span><span>${cartCount()}</span></div><div class="ln"><span>المنتجات</span><span id="subt" data-v="${total}">${money(total)} ج.م</span></div><div class="ln"><span>التوصيل</span><span id="shipv">اختار المحافظة</span></div><div class="ln big"><span>الإجمالي</span><span id="totv">${money(total)} ج.م</span></div>
+  ${me ? `<div id="m"></div><label>المحافظة / المنطقة</label><select id="area" onchange="shipPick(this.value)"><option value="">اختار...</option>${shipAreas().map(o => `<option value="${esc(o.n)}"${o.n === shipSel() ? ' selected' : ''}>${esc(o.n)} - ${money(o.fee)} ج.م</option>`).join('')}</select><label>العنوان</label><input id="addr" placeholder="المدينة، الشارع، رقم العمارة"><label>رقم التليفون</label><input id="ph" inputmode="tel" placeholder="01xxxxxxxxx"><div class="cod">${ic('cash', 18)} الدفع عند الاستلام</div><button class="btn wide" onclick="checkout()">تأكيد الطلب</button>`
        : '<p class="small">لازم تسجل دخول عشان تكمل الطلب.</p><button class="btn wide" onclick="go(\'login\')">دخول</button>'}</div></div>`;
+  if ($('#area')) shipPick($('#area').value);
 }
 function setQty(id, q) { q = parseInt(q, 10) || 0; const p = products.find(x => x.id === id);
   if (q > p.stock) { q = p.stock; flash = msg('الكمية المتاحة ' + p.stock + ' فقط'); }
   cart = q > 0 ? cart.map(i => i.id === id ? { ...i, qty: q } : i) : cart.filter(i => i.id !== id); saveCart(); go('cart'); }
 async function checkout() {
-  try { await api('/api/orders', 'POST', { items: cart, address: $('#addr').value, phone: $('#ph').value });
+  try { await api('/api/orders', 'POST', { items: cart, area: $('#area').value, address: $('#addr').value, phone: $('#ph').value });
     cart = []; saveCart(); flash = msg('تم تسجيل طلبك بنجاح ✓ هنتواصل معاك قريب', 'ok'); go('orders'); } catch (e) { $('#m').innerHTML = msg(e.message); }
 }
 async function loadCap() { const el = document.getElementById('cap'); if (!el) return; try { const c = await api('/api/captcha'); window.capTok = c.token; el.innerHTML = c.svg + '<button type="button" class="caprf" onclick="loadCap()" aria-label="تحديث">↻</button>'; const i = document.getElementById('cp'); if (i) i.value = ''; } catch (e) { el.textContent = 'تعذّر تحميل الكود، اضغط تحديث'; } }
@@ -181,7 +187,7 @@ async function ordersView(f) {
   const { orders } = await api('/api/orders');
   $('#app').innerHTML = f + `<div class="panel"><h2>${me.role === 'admin' ? 'كل الطلبات' : 'طلباتي'}</h2>` + (orders.length ? orders.map(o => `<div class="ord"><div class="h"><b>طلب #${o.id}</b><span class="st ${stc(o.status)}">${esc(o.status)}</span></div>
   <div class="small">${esc(o.username)} • ${new Date(o.date).toLocaleString('ar-EG')}</div>
-  <div style="margin:6px 0">${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div><div><b>${money(o.total)} ج.م</b> <span class="small">• ${esc(o.address)} • ${esc(o.phone)}</span></div></div>`).join('') : `<div class="empty"><div class="e">${ic('box', 56)}</div>مفيش طلبات لحد دلوقتي.</div>`) + `</div><div class="panel narrow" style="margin-top:16px"><h2>تغيير الباسورد</h2><div id="pm"></div><label>الباسورد الحالي</label><input id="op" type="password" autocomplete="current-password"><label>الباسورد الجديد</label><input id="np" type="password" autocomplete="new-password"><button class="btn wide" onclick="chPw()">حفظ الباسورد الجديد</button></div>`;
+  <div style="margin:6px 0">${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div><div><b>${money(o.total)} ج.م</b>${o.shipping ? ` <span class="small">(شحن ${money(o.shipping)})</span>` : ''} <span class="small">• ${esc(o.address)} • ${esc(o.phone)}</span></div></div>`).join('') : `<div class="empty"><div class="e">${ic('box', 56)}</div>مفيش طلبات لحد دلوقتي.</div>`) + `</div><div class="panel narrow" style="margin-top:16px"><h2>تغيير الباسورد</h2><div id="pm"></div><label>الباسورد الحالي</label><input id="op" type="password" autocomplete="current-password"><label>الباسورد الجديد</label><input id="np" type="password" autocomplete="new-password"><button class="btn wide" onclick="chPw()">حفظ الباسورد الجديد</button></div>`;
 }
 let editing = null;
 async function adminView(f, tab) {
@@ -284,5 +290,8 @@ async function chAdminPanel() {
   const app = $('#app'); if (!app || view !== 'admin') return; await chLoad(); const r = await api('/api/chat'); CH.faq = r.faq;
   const d = document.createElement('div'); d.className = 'panel'; d.innerHTML = `<h2>ردود الشات التلقائي</h2><div id="chm"></div><p class="small">عدّل الإجابات اللي العميل بيشوفها في الشات. لو فضيت خانة بيرجع الرد الافتراضي.</p>` +
     CH.faq.map(f => `<label>${esc(f.q)}</label><textarea id="cha_${f.id}" rows="3">${esc(f.a)}</textarea>`).join('') + `<div class="row"><button class="btn" onclick="chSave()">حفظ الردود</button></div>`; app.appendChild(d);
+  try { const sr = await api('/api/shipping'); const e = document.createElement('div'); e.className = 'panel'; e.innerHTML = `<h2>مصاريف الشحن حسب المحافظة</h2><div id="shm"></div>` + sr.tiers.map(t => `<label>${esc(t.areas.join('، '))}</label><input id="shf_${t.id}" inputmode="numeric" value="${t.fee}">`).join('') + `<div class="row"><button class="btn" onclick="shSave()">حفظ الشحن</button></div>`; app.appendChild(e); } catch {}
 }
 async function chSave() { try { const a = {}; CH.faq.forEach(f => { a[f.id] = ($('#cha_' + f.id) || {}).value || ''; }); const r = await api('/api/chat', 'PUT', { answers: a }); CH.faq = r.faq; $('#chm').innerHTML = msg('اتحفظت الردود ✓', 'ok'); } catch (e) { $('#chm').innerHTML = msg(e.message); } }
+
+async function shSave() { try { const f = {}; ['a', 'b', 'c'].forEach(k => { f[k] = $('#shf_' + k).value; }); const r = await api('/api/shipping', 'PUT', { fees: f }); SHIP = r.tiers; $('#shm').innerHTML = msg('اتحفظ الشحن ✓', 'ok'); } catch (e) { $('#shm').innerHTML = msg(e.message); } }
