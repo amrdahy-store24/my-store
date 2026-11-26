@@ -57,7 +57,7 @@ function setTheme(d) { if (d === (document.documentElement.getAttribute('data-th
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && menuOpen) closeMenu(); });
 let dataAt = 0, dataSig = '';
 async function loadData() {
-  const [p, o] = await Promise.all([api('/api/products').catch(() => null), api('/api/offer').catch(() => null)]);
+  const [p, o] = await Promise.all([api('/api/products?c=' + COUNTRY + (me && me.role === 'admin' ? '&all=1' : '')).catch(() => null), api('/api/offer').catch(() => null)]);
   if (p) products = p.products; if (o) offer = o.offer; dataAt = Date.now();
   const sig = JSON.stringify([products, offer]); const ch = dataSig && sig !== dataSig; dataSig = sig; return ch;
 }
@@ -73,11 +73,12 @@ async function go(v, arg, quiet) {
   if (v === 'login' || v === 'register') return authView(v, f);
   if (v === 'forgot') return forgotView(f);
   if (v === 'orders') return ordersView(f);
-  if (v === 'admin') return adminView(f, arg).then(chAdminPanel);
+  if (v === 'admin') return loadData().catch(() => {}).then(() => adminView(f, arg)).then(chAdminPanel);
 }
 function filt() { const q = ($('#q') ? $('#q').value : '').trim().toLowerCase(); document.querySelectorAll('.card').forEach(c => c.style.display = c.dataset.s.includes(q) && (!cat || c.dataset.c === cat) ? '' : 'none'); }
 function setCat(c) { cat = c; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.c === c)); filt(); }
-const cats = () => [...new Set(products.map(p => p.category).filter(Boolean))];
+const vis = p => cPrice(p) != null, pv = () => (view === 'admin' ? products : products.filter(vis));
+const cats = () => [...new Set(pv().map(p => p.category).filter(Boolean))];
 const catList = () => [...new Set(['إلكترونيات', 'ملابس', 'أدوات منزلية', 'إكسسوارات', ...products.map(p => p.category).filter(Boolean)])];
 let slI = 0, slT = null;
 function slGo(n) { const s = document.querySelectorAll('.slider .slide'); if (!s.length) return; slI = (n + s.length) % s.length; s.forEach((e, i) => e.classList.toggle('on', i === slI)); document.querySelectorAll('.slider .dot').forEach((e, i) => { e.classList.toggle('on', i === slI); e.setAttribute('aria-current', i === slI); }); }
@@ -94,22 +95,22 @@ function sliderHtml() {
 }
 function shop(f) {
   cat = ''; slI = 0; setTimeout(slStart, 0); $('#app').innerHTML = f + sliderHtml() + `<div class="perks"><div class="perk"><i>${ic('truck', 24)}</i><div><b>توصيل سريع</b><span>لحد باب البيت</span></div></div><div class="perk"><i>${ic('cash', 24)}</i><div><b>الدفع عند الاستلام</b><span>ادفع وانت بتستلم</span></div></div><div class="perk"><i>${ic('shield', 24)}</i><div><b>جودة مضمونة</b><span>منتجات مختارة بعناية</span></div></div></div>
-  <div class="sh" id="prods"><h3>المنتجات<span>${products.length} منتج</span></h3><div class="search"><input id="q" placeholder="ابحث عن منتج..." oninput="filt()"></div></div>${cats().length > 0 ? `<div class="chips"><button class="chip on" data-c="" onclick="setCat('')">الكل</button>${cats().map(c => `<button class="chip" data-c="${esc(c)}" onclick="setCat(this.dataset.c)">${esc(c)}</button>`).join('')}</div>` : ''}` +
-  (products.length ? `<div class="grid">${products.map(p => `<div class="card" onclick="openProd(${p.id})" data-c="${esc(p.category || '')}" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
-  <div class="b"><div class="nm">${esc(p.name)}</div><div class="small">${esc(p.description)}</div><div class="price">${cPrice(p) == null ? '<small>غير متاح في ' + cnm(COUNTRY) + ' حاليًا</small>' : money(cPrice(p)) + '<small>' + sym() + '</small>'}</div>
-  <button class="btn" ${p.stock < 1 || cPrice(p) == null ? 'disabled' : ''} onclick="event.stopPropagation();addCart(${p.id})">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button></div></div>`).join('')}</div>` : `<div class="panel empty"><div class="e">${ic('bag', 56)}</div>مفيش منتجات حاليًا، ارجع قريب.</div>`);
+  <div class="sh" id="prods"><h3>المنتجات<span>${pv().length} منتج</span></h3><div class="search"><input id="q" placeholder="ابحث عن منتج..." oninput="filt()"></div></div>${cats().length > 0 ? `<div class="chips"><button class="chip on" data-c="" onclick="setCat('')">الكل</button>${cats().map(c => `<button class="chip" data-c="${esc(c)}" onclick="setCat(this.dataset.c)">${esc(c)}</button>`).join('')}</div>` : ''}` +
+  (pv().length ? `<div class="grid">${pv().map(p => `<div class="card" onclick="openProd(${p.id})" data-c="${esc(p.category || '')}" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
+  <div class="b"><div class="nm">${esc(p.name)}</div><div class="small">${esc(p.description)}</div><div class="price">${money(cPrice(p))}<small>${sym()}</small></div>
+  <button class="btn" ${p.stock < 1 ? 'disabled' : ''} onclick="event.stopPropagation();addCart(${p.id})">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button></div></div>`).join('')}</div>` : `<div class="panel empty"><div class="e">${ic('bag', 56)}</div>مفيش منتجات حاليًا، ارجع قريب.</div>`);
 }
 let after = null;
 function needLogin(next, text) { after = next; flash = msg(text); go('login'); }
 function openProd(id) { if (!me) return needLogin({ v: 'prod', a: id }, 'سجّل دخولك الأول عشان تشوف تفاصيل المنتج'); go('prod', id); }
 function addCart(id, back) {
   if (!me) return needLogin({ v: 'prod', a: id }, 'لازم تسجّل دخول الأول عشان تطلب');
-  const p = products.find(x => x.id === id), it = cart.find(x => x.id === id), q = (it ? it.qty : 0) + 1;
+  const p = products.find(x => x.id === id && vis(x)), it = cart.find(x => x.id === id), q = (it ? it.qty : 0) + 1;
   if (!p || q > p.stock) { flash = msg('وصلت للحد الأقصى المتاح من المنتج ده'); return back ? go('prod', id) : go('shop'); }
   if (it) it.qty = q; else cart.push({ id, qty: 1 }); saveCart(); flash = msg('اتضاف للسلة ✓', 'ok'); back ? go('prod', id) : go('shop');
 }
 function prodView(f, id) {
-  const p = products.find(x => x.id === id);
+  const p = products.find(x => x.id === id && vis(x));
   if (!p) { flash = msg('المنتج مش موجود'); return go('shop'); }
   const lines = String(p.description || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   const specs = lines.filter(l => /^[^:：]{1,30}[:：]\s*\S/.test(l)).map(l => l.split(/[:：]/)), desc = lines.filter(l => !/^[^:：]{1,30}[:：]\s*\S/.test(l));
@@ -128,7 +129,7 @@ const sym = () => CNT[COUNTRY].sym, cnm = c => LANG === 'en' ? CNT[c].en : CNT[c
 const cPrice = p => COUNTRY === 'EG' ? p.price : (p.prices && +p.prices[COUNTRY] > 0 ? +p.prices[COUNTRY] : null);
 const cm = n => money(n) + ' ' + sym();
 const cOpts = sel => Object.keys(CNT).map(c => `<option value="${c}"${c === sel ? ' selected' : ''}>${esc(cnm(c))}</option>`).join('');
-function setCountry(c) { if (!CNT[c]) return; COUNTRY = c; try { localStorage.setItem('country', c); } catch {} CH.hist = []; closeMenu(); go(view, curArg, true); }
+function setCountry(c) { if (!CNT[c]) return; COUNTRY = c; try { localStorage.setItem('country', c); } catch {} CH.hist = []; closeMenu(); loadData().catch(() => {}).then(() => go(view === 'prod' && !products.some(p => p.id === curArg && vis(p)) ? 'shop' : view, curArg, true)); }
 let SHIPC = null;
 const areaSel = () => COUNTRY !== 'EG' ? '' : `<label>المحافظة / المنطقة</label><select id="area" onchange="shipPick(this.value)"><option value="">اختار...</option>${shipAreas().map(o => `<option value="${esc(o.n)}"${o.n === shipSel() ? ' selected' : ''}>${esc(o.n)} - ${money(o.fee)} ج.م</option>`).join('')}</select>`;
 let SHIP = null; const shipLoad = () => api('/api/shipping').then(r => { SHIP = r.tiers; SHIPC = r.countries; if (view === 'cart') go('cart'); }).catch(() => {});
@@ -139,7 +140,7 @@ function shipPick(v) { try { if (v) localStorage.setItem('area', v); } catch {} 
   $('#shipv').textContent = fee != null ? cm(fee) : COUNTRY === 'EG' ? ($('#area') ? 'اختار المحافظة' : 'يتحدد عند التأكيد') : 'هيتحدد قريب'; $('#totv').textContent = cm(t + (fee || 0)); }
 function cartView(f) {
   if (!SHIP) { shipLoad(); }
-  cart = cart.filter(i => products.some(p => p.id === i.id)); saveCart(); nav();
+  cart = cart.filter(i => products.some(p => p.id === i.id && vis(p))); saveCart(); nav();
   if (!cart.length) return $('#app').innerHTML = f + `<div class="panel empty"><div class="e">${ic('cart', 56)}</div><h2>السلة فاضية</h2><button class="btn" onclick="go(\'shop\')">ابدأ التسوّق</button></div>`;
   const rows = cart.map(i => { const p = products.find(x => x.id === i.id); return `<div class="ci"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div>
   <div><b>${esc(p.name)}</b><div class="p">${cPrice(p) == null ? 'غير متاح في ' + cnm(COUNTRY) : cm(cPrice(p))} للقطعة</div><div class="stp" style="margin-top:6px"><button onclick="setQty(${i.id},${i.qty + 1})">+</button><span>${i.qty}</span><button onclick="setQty(${i.id},${i.qty - 1})">−</button></div></div>
@@ -210,7 +211,7 @@ async function adminView(f, tab) {
   $('#app').innerHTML = f + `<h2 style="margin:6px 0 14px;font-weight:800">لوحة التحكم</h2><div class="stats"><div class="stat"><span>المنتجات</span><b>${products.length}</b></div><div class="stat"><span>الطلبات</span><b>${orders.length}</b></div>
   <div class="stat"><span>طلبات جديدة</span><b>${orders.filter(o => o.status === 'جديد').length}</b></div><div class="stat"><span>إجمالي المبيعات</span><b>${revText}</b></div><div class="stat"><span>العملاء</span><b>${users.length}</b></div></div>
   <div class="adm"><div class="panel"><h2>${editing ? 'تعديل منتج' : 'إضافة منتج'}</h2><div id="m"></div>
-  <label>الاسم</label><input id="n" value="${esc(e.name)}"><label>السعر في مصر (ج.م)</label><input id="pr" type="number" min="0" step="0.01" value="${e.price ?? ''}">${['SA', 'AE', 'IQ', 'OM'].map(c => `<label>السعر في ${CNT[c].ar} (${CNT[c].sym}) - اختياري</label><input id="pr_${c}" type="number" min="0" step="0.01" value="${(e.prices || {})[c] ?? ''}">`).join('')}
+  <label>الاسم</label><input id="n" value="${esc(e.name)}"><p class="small">اكتب سعر المنتج في كل دولة هتبيعه فيها. الدولة اللي تسيب سعرها فاضي المنتج مش هيظهر فيها خالص.</p><label>السعر في مصر (ج.م) - فاضي = مش هيظهر في مصر</label><input id="pr" type="number" min="0" step="0.01" value="${e.price ?? ''}">${['SA', 'AE', 'IQ', 'OM'].map(c => `<label>السعر في ${CNT[c].ar} (${CNT[c].sym}) - فاضي = مش هيظهر في ${CNT[c].ar}</label><input id="pr_${c}" type="number" min="0" step="0.01" value="${(e.prices || {})[c] ?? ''}">`).join('')}
   <label>القسم</label><input id="cg" list="cgl" value="${esc(e.category)}" placeholder="اختار قسم أو اكتب قسم جديد"><datalist id="cgl">${catList().map(c => `<option value="${esc(c)}">`).join('')}</datalist><label>الكمية المتاحة</label><input id="st" type="number" min="0" value="${e.stock ?? ''}"><label>الوصف</label><textarea id="d" rows="3">${esc(e.description)}</textarea>
   <label>صورة المنتج (اختياري - ارفع صورة أو حط رابط)</label><input id="img" value="${esc(e.image && !e.image.startsWith('data:') && !e.image.startsWith('/img/') ? e.image : '')}" placeholder="https://..."><input type="file" id="file" accept="image/*">
   <div class="row"><button class="btn" onclick="saveProd()">${editing ? 'حفظ التعديل' : '＋ إضافة المنتج'}</button>${editing ? '<button class="btn gray" onclick="editing=null;go(\'admin\')">إلغاء</button>' : ''}</div></div>
@@ -219,7 +220,7 @@ async function adminView(f, tab) {
   <label>عنوان صغير فوق كل عرض (اختياري، مثلاً: عرض)</label><input id="ot" value="${esc(offer && offer.title)}"><label>نص العروض (كل سطر عرض = شريحة منفصلة في السلايدر)</label><textarea id="ox" rows="4">${esc(offer && offer.text)}</textarea>
   
   <button class="btn" onclick="saveOffer()">حفظ العرض</button></div>
-  <div class="panel"><h2>المنتجات (${products.length})</h2>${products.map(p => `<div class="pr"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div><div><b>${esc(p.name)}</b><div class="sm">${money(p.price)} ج.م${Object.keys(p.prices || {}).length ? ' + ' + Object.keys(p.prices).join('/') : ''} • الكمية ${p.stock}</div></div>
+  <div class="panel"><h2>المنتجات (${products.length})</h2>${products.map(p => `<div class="pr"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div><div><b>${esc(p.name)}</b><div class="sm">${['EG', ...Object.keys(p.prices || {})].filter(c => c !== 'EG' || p.price != null).map(c => CNT[c].ar).join('، ')} • الكمية ${p.stock}</div></div>
   <div class="row"><button class="btn gray" onclick="editProd(${p.id})">تعديل</button><button class="btn red" onclick="delProd(${p.id})">حذف</button></div></div>`).join('') || '<div class="empty">لسه مفيش منتجات.</div>'}</div>
   <div class="panel"><h2>العملاء المسجلين (${users.length})</h2>${users.map(x => `<div class="pr" style="grid-template-columns:1fr auto"><div><b>${esc(x.username)}</b>${x.resetAt ? ' <span class="st s2">طلب نسيان باسورد</span>' : ''}<div class="sm" dir="ltr" style="text-align:right">${esc(x.phone) || 'بدون رقم'} • ${x.createdAt ? new Date(x.createdAt).toLocaleDateString('en-GB') : '-'}</div><div id="rs${x.id}"></div></div>
   <div class="row"><button class="btn red" onclick="delUser(${x.id},'${esc(x.username)}')">حذف</button><button class="btn gray" onclick="resetUser(${x.id},'${esc(x.username)}','${esc(x.phone)}')">باسورد مؤقت</button></div></div>`).join('') || '<div class="empty">لسه مفيش عملاء.</div>'}</div>

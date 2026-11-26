@@ -58,7 +58,7 @@ function need(u, role) { if (!u) throw new Err(401, 'سجّل دخولك الأ�
 // ردود الشات التلقائي (قابلة للتعديل من لوحة التحكم). k = كلمات مفتاحية للمطابقة
 const COUNTRIES = { EG: { ar: 'مصر', en: 'Egypt', cur: 'EGP', sym: 'ج.م' }, SA: { ar: 'السعودية', en: 'Saudi Arabia', cur: 'SAR', sym: 'ر.س' }, AE: { ar: 'الإمارات', en: 'UAE', cur: 'AED', sym: 'د.إ' }, IQ: { ar: 'العراق', en: 'Iraq', cur: 'IQD', sym: 'د.ع' }, OM: { ar: 'عُمان', en: 'Oman', cur: 'OMR', sym: 'ر.ع' } };
 const cc = v => { v = String(v || '').toUpperCase(); return COUNTRIES[v] ? v : ''; };
-const pPrice = (p, c) => c === 'EG' ? p.price : (p.prices && Number(p.prices[c]) > 0 ? Number(p.prices[c]) : null);
+const pPrice = (p, c) => c === 'EG' ? (p.price == null || p.price === '' || !(Number(p.price) >= 0) ? null : Number(p.price)) : (p.prices && Number(p.prices[c]) > 0 ? Number(p.prices[c]) : null);
 const cShip = c => { const v = (db.shipCountry || {})[c]; return v === '' || v == null || !(Number(v) >= 0) ? null : Number(v); };
 const SHIP_TIERS = [
   { id: 'a', fee: 95, areas: ['القاهرة', 'الجيزة', 'الإسكندرية'] },
@@ -99,7 +99,7 @@ function aiAllow(ip) {
 }
 function aiSystem(country) {
   country = cc(country) || 'EG'; const C = COUNTRIES[country];
-  const prods = db.products.slice(0, 60).map(p => `- ${p.name} | ${pPrice(p, country) == null ? 'غير متاح في ' + C.ar : pPrice(p, country) + ' ' + C.sym} | ${p.stock > 0 ? "متاح (" + p.stock + ")" : "نفذت الكمية"} | ${p.category || ''} | ${String(p.description || '').replace(/\s+/g, ' ').slice(0, 140)}`).join('\n') || '(لا توجد منتجات حالياً)';
+  const prods = db.products.filter(p => pPrice(p, country) != null).slice(0, 60).map(p => `- ${p.name} | ${pPrice(p, country) + ' ' + C.sym} | ${p.stock > 0 ? "متاح (" + p.stock + ")" : "نفذت الكمية"} | ${p.category || ''} | ${String(p.description || '').replace(/\s+/g, ' ').slice(0, 140)}`).join('\n') || '(لا توجد منتجات حالياً)';
   const o = getOffer(), faq = chatFaq().map(f => `س: ${f.q}\nج: ${f.a}`).join('\n');
   return `أنت مساعد دعم العملاء لمتجر "تِكمو" (Tekmoo) الإلكتروني في مصر. اتكلم بنفس لغة العميل (عربي مصري بسيط أو إنجليزي) وكن مختصر ومهذب (٣ جمل بحد أقصى).
 قواعد صارمة:
@@ -128,14 +128,15 @@ async function aiAnswer(question, hist, country) {
 }
 function getOffer() { return db.offer || { on: true, title: 'عرض لفترة محدودة', text: 'سماعات Reno airpods: أول 3 قطع بـ 690 جنيه فقط بدل 750 جنيه للقطعة', image: '' }; }
 function cleanProduct(b) {
-  const name = String(b.name || '').trim(), price = Number(b.price), stock = parseInt(b.stock, 10);
+  const name = String(b.name || '').trim(), egBlank = b.price === '' || b.price == null, price = egBlank ? null : Number(b.price), stock = parseInt(b.stock, 10);
   if (!name) throw new Err(400, 'اسم المنتج مطلوب');
-  if (!(price >= 0) || !isFinite(price)) throw new Err(400, 'السعر غير صحيح');
+  if (!egBlank && (!(price >= 0) || !isFinite(price))) throw new Err(400, 'السعر غير صحيح');
   if (!(stock >= 0)) throw new Err(400, 'الكمية غير صحيحة');
   const image = String(b.image || '');
   if (image && !/^(https?:\/\/|data:image\/|\/img\/)/.test(image)) throw new Err(400, 'رابط الصورة غير صحيح');
+  if (egBlank && !Object.values(b.prices || {}).some(v => v !== '' && v != null)) throw new Err(400, 'حط سعر منتج في دولة واحدة على الأقل');
   const prices = {}; for (const c of Object.keys(COUNTRIES)) { if (c === 'EG') continue; const raw = (b.prices || {})[c]; if (raw === '' || raw == null) continue; const v = Number(raw); if (!(v > 0) || !isFinite(v) || v > 1e9) throw new Err(400, 'سعر ' + COUNTRIES[c].ar + ' غير صحيح'); prices[c] = Math.round(v * 100) / 100; }
-  return { name: name.slice(0, 100), price: Math.round(price * 100) / 100, prices, stock, description: String(b.description || '').slice(0, 1000), image, category: String(b.category || '').trim().slice(0, 40) };
+  return { name: name.slice(0, 100), price: egBlank ? null : Math.round(price * 100) / 100, prices, stock, description: String(b.description || '').slice(0, 1000), image, category: String(b.category || '').trim().slice(0, 40) };
 }
 
 
@@ -241,7 +242,8 @@ async function api(req, res, url) {
   if (m === 'GET' && p === '/api/config') return send(res, 200, { ownerWhatsapp: OWNER_WHATSAPP });
   if (m === 'GET' && p === '/api/me') return send(res, 200, { user: pub(u) });
   if (m === 'GET' && p === '/api/products') {
-    const out = JSON.stringify({ products: db.products.map(pubProd) }), tag = '"' + crypto.createHash('md5').update(out).digest('hex').slice(0, 16) + '"';
+    const qs = new URL(req.url, 'http://x').searchParams, cty = cc(qs.get('c')) || 'EG', allp = qs.get('all') === '1' && u && u.role === 'admin';
+    const out = JSON.stringify({ products: db.products.filter(x => allp || pPrice(x, cty) != null).map(pubProd) }), tag = '"' + crypto.createHash('md5').update(out).digest('hex').slice(0, 16) + '"';
     if (req.headers['if-none-match'] === tag) { res.writeHead(304, { ETag: tag, 'Cache-Control': 'no-cache' }); return res.end(); }
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', ETag: tag, 'Cache-Control': 'no-cache' }); return res.end(out);
   }
