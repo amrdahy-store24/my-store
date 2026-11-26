@@ -181,13 +181,13 @@ function login(res, user) {
   const t = crypto.randomBytes(24).toString('hex'); sessions.set(t, user.id);
   send(res, 200, { user: pub(user) }, { 'Set-Cookie': `sid=${t}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` });
 }
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
 function start() { http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   try {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     const f = url.pathname === '/' ? 'index.html' : path.basename(url.pathname);
-    const fp = ['index.html','style.css','app.js'].includes(f) ? path.join(__dirname, f) : '/nonexistent';
+    const fp = ['index.html','style.css','app.js','i18n.js','favicon.svg','apple-touch-icon.png'].includes(f) ? path.join(__dirname, f) : '/nonexistent';
     if (!fs.existsSync(fp)) { res.writeHead(404); return res.end('404'); }
     res.writeHead(200, { 'Content-Type': types[path.extname(fp)] || 'application/octet-stream' }); fs.createReadStream(fp).pipe(res);
   } catch (e) { send(res, e.code || 500, { error: e.code ? e.message : 'حصل خطأ في السيرفر' }); }

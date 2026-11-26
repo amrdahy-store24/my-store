@@ -20,12 +20,40 @@ const SUN = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke=
 function paintTheme() { const d = document.documentElement.getAttribute('data-theme') === 'dark'; const b = $('#tg'); if (b) { b.innerHTML = d ? SUN : MOON; b.title = d ? 'الوضع الفاتح' : 'الوضع الداكن'; } }
 function toggleTheme() { const d = document.documentElement.getAttribute('data-theme') === 'dark'; if (d) document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', 'dark'); try { localStorage.setItem('theme', d ? 'light' : 'dark'); } catch {} paintTheme(); }
 paintTheme();
+let cfg = { ownerWhatsapp: '' }; fetch('/api/config').then(r => r.json()).then(c => { cfg = c; }).catch(() => {});
+const WM = (cls = '') => `<span class="wm ${cls}" dir="ltr">tekm<svg viewBox="0 0 150 90" aria-hidden="true"><circle cx="45" cy="45" r="30" fill="none" stroke="url(#tkg)" stroke-width="12"/><circle cx="105" cy="45" r="30" fill="none" stroke="url(#tkg)" stroke-width="12"/></svg></span>`;
 function nav() {
-  const b = (v, ic, t, x = '') => `<button class="${view === v ? 'on' : ''}" onclick="go('${v}')"><span class="ic">${ic}</span>${t}${x}</button>`;
+  const b = (v, ic, t, x = '') => `<button class="${view === v ? 'on' : ''}" onclick="go('${v}')"><span class="ic">${ic}</span><span class="t">${t}</span>${x}</button>`;
   $('#nav').innerHTML = b('shop', ic('home'), 'الرئيسية') + b('cart', ic('cart'), 'السلة', cartCount() ? `<span class="badge">${cartCount()}</span>` : '') +
-    (me ? `${me.role === 'admin' ? b('admin', ic('gear'), 'لوحة التحكم') : ''}${b('orders', ic('box'), 'طلباتي')}<span class="usr">${esc(me.username)}</span><button onclick="logout()"><span class="ic">${ic('out')}</span>خروج</button>`
-        : b('login', ic('user'), 'دخول') + b('register', ic('plus'), 'حساب جديد'));
+    (me ? (me.role === 'admin' ? b('admin', ic('gear'), 'لوحة التحكم') : b('orders', ic('box'), 'طلباتي')) : b('login', ic('user'), 'دخول')) +
+    `<button class="${menuOpen ? 'on' : ''}" onclick="toggleMenu()" aria-label="القائمة" aria-expanded="${menuOpen}"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span><span class="t">القائمة</span></button>`;
+  const fw = $('#fwm'); if (fw && !fw.innerHTML) fw.innerHTML = WM('big');
 }
+let menuOpen = false;
+function closeMenu() { menuOpen = false; const m = $('#menu'); if (m) m.remove(); nav(); }
+function toggleMenu() { if (menuOpen) return closeMenu(); menuOpen = true; renderMenu(); nav(); }
+function menuGo(v, arg) { closeMenu(); go(v, arg); }
+function menuCat(c) { closeMenu(); go('shop').then(() => { setCat(c); const el = document.getElementById('prods'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }); }
+function renderMenu() {
+  const old = $('#menu'); if (old) old.remove();
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark', wa = String(cfg.ownerWhatsapp || '').replace(/\D/g, '');
+  const row = (ico, t, oc, sub = '') => `<button class="mi" onclick="${oc}"><span class="mic">${ic(ico, 20)}</span><span class="mt">${t}${sub ? `<small>${sub}</small>` : ''}</span></button>`;
+  const link = (ico, t, href, sub = '') => `<a class="mi" href="${href}" target="_blank" rel="noopener"><span class="mic">${ic(ico, 20)}</span><span class="mt">${t}${sub ? `<small dir="ltr">${sub}</small>` : ''}</span></a>`;
+  const cl = cats();
+  const acc = me ? `<div class="mu"><b>${esc(me.username)}</b></div>${row('box', 'طلباتي', "menuGo('orders')")}${me.role === 'admin' ? row('gear', 'لوحة التحكم', "menuGo('admin')") : ''}${row('out', 'تسجيل الخروج', 'closeMenu();logout()')}`
+    : `<p class="mhint">سجّل الدخول أو أنشئ حساب</p>${row('user', 'دخول', "menuGo('login')")}${row('plus', 'حساب جديد', "menuGo('register')")}`;
+  const el = document.createElement('div'); el.id = 'menu';
+  el.innerHTML = `<div class="mov" onclick="closeMenu()"></div><aside class="msh" role="dialog" aria-label="القائمة"><div class="mh">${WM()}<button class="mx" onclick="closeMenu()" aria-label="إغلاق">✕</button></div>
+  <div class="ms"><h4>حسابي</h4>${acc}</div>
+  <div class="ms"><h4>الأقسام</h4>${cl.length ? `<div class="mch"><button onclick="menuCat('')">الكل</button>${cl.map(c => `<button onclick="menuCat(this.dataset.c)" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>` : '<p class="mhint">مفيش أقسام لسه</p>'}</div>
+  <div class="ms"><h4>الدعم الفني</h4>${wa ? link('spark', 'محتاج مساعدة؟ كلّمنا واتساب', `https://wa.me/${wa}?text=${encodeURIComponent('محتاج مساعدة في المتجر')}`) : ''}</div>
+  <div class="ms"><h4>تواصل معنا</h4>${wa ? link('user', 'واتساب', `https://wa.me/${wa}`, '+' + wa) + link('truck', 'اتصال', `tel:+${wa}`, '+' + wa) : ''}</div>
+  <div class="ms"><h4>الإعدادات</h4><div class="mset"><span>اللغة</span><div class="seg"><button class="${LANG === 'ar' ? 'on' : ''}" onclick="setLang('ar')">العربية</button><button class="${LANG === 'en' ? 'on' : ''}" onclick="setLang('en')">English</button></div></div>
+  <div class="mset"><span>المظهر</span><div class="seg"><button class="${dark ? '' : 'on'}" onclick="setTheme(false)">فاتح</button><button class="${dark ? 'on' : ''}" onclick="setTheme(true)">داكن</button></div></div></div></aside>`;
+  document.body.appendChild(el);
+}
+function setTheme(d) { if (d === (document.documentElement.getAttribute('data-theme') === 'dark')) return; toggleTheme(); if (menuOpen) renderMenu(); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && menuOpen) closeMenu(); });
 async function go(v, arg) {
   try { products = (await api('/api/products')).products; } catch {}
   try { offer = (await api('/api/offer')).offer; } catch {}
@@ -107,7 +135,7 @@ async function checkout() {
 async function loadCap() { const el = document.getElementById('cap'); if (!el) return; try { const c = await api('/api/captcha'); window.capTok = c.token; el.innerHTML = c.svg + '<button type="button" class="caprf" onclick="loadCap()" aria-label="تحديث">↻</button>'; const i = document.getElementById('cp'); if (i) i.value = ''; } catch (e) { el.textContent = 'تعذّر تحميل الكود، اضغط تحديث'; } }
 function authView(v, f) {
   const reg = v === 'register';
-  $('#app').innerHTML = `<div class="panel narrow"><div class="ai">${ic(reg ? 'spark' : 'lock', 30)}</div><h2>${reg ? 'إنشاء حساب جديد' : 'أهلاً بيك تاني'}</h2><p class="small" style="margin-top:-8px">${reg ? 'سجّل في ثواني وابدأ اطلب' : 'سجّل دخولك عشان تكمل طلباتك'}</p>${f}<div id="m"></div><label>اسم المستخدم</label><input id="u" autocomplete="username" autocapitalize="none">
+  $('#app').innerHTML = `<div class="panel narrow"><div class="ai">${WM('big')}</div><h2>${reg ? 'إنشاء حساب جديد' : 'أهلاً بيك تاني'}</h2><p class="small" style="margin-top:-8px">${reg ? 'سجّل في ثواني وابدأ اطلب' : 'سجّل دخولك عشان تكمل طلباتك'}</p>${f}<div id="m"></div><label>اسم المستخدم</label><input id="u" autocomplete="username" autocapitalize="none">
   ${reg ? '<label>رقم الموبايل</label><input id="ph" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx">' : ''}<label>الباسورد</label><input id="p" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}"><label>كود التحقق (عشان نتأكد إنك مش روبوت)</label><div class="cap" id="cap"></div><input id="cp" onkeydown="if(event.key==='Enter')auth(\'${v}\')" autocomplete="off" autocapitalize="characters" maxlength="8" placeholder="اكتب الحروف اللي في الصورة" dir="ltr" style="text-align:center;letter-spacing:3px">
   <button class="btn wide" onclick="auth('${v}')">${reg ? 'إنشاء الحساب' : 'دخول'}</button>
   ${reg ? '' : '<div class="alt" style="margin-top:10px"><a onclick="go(\'forgot\')">نسيت الباسورد؟</a></div>'}
