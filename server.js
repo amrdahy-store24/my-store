@@ -78,7 +78,7 @@ function getUser(req) {
 }
 const pub = u => u && { id: u.id, username: u.username, role: u.role, status: u.status || 'active', phone: u.phone || '', country: u.country || 'EG' };
 function normPhone(v) { let x = String(v || '').replace(/[\s\-()]/g, '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)); if (x.startsWith('+20')) x = '0' + x.slice(3); else if (x.startsWith('0020')) x = '0' + x.slice(4); return /^\+\d{8,15}$/.test(x) ? x : /^01[0125]\d{8}$/.test(x) ? x : ''; }
-class Err extends Error { constructor(code, msg) { super(msg); this.code = code; } }
+class Err extends Error { constructor(code, msg, extra) { super(msg); this.code = code; if (extra) this.extra = extra; } }
 function need(u, role) { if (!u) throw new Err(401, 'سجّل دخولك الأول'); if (role && u.role !== role) throw new Err(403, 'غير مسموح'); }
 
 
@@ -231,32 +231,26 @@ async function api(req, res, url) {
     if (!ok.length) { addFail(ak); addFail(ik); const er = new Err(401, 'اليوزر أو الباسورد غلط'); if (failCount(ak) >= 3 || failCount(ik) >= 5) er.captchaRequired = true; throw er; }
     fails.delete(ak);
     if (ok.length > 1) throw new Err(409, 'في أكتر من حساب بنفس الاسم والباسورد، سجّل دخول برقم الموبايل بدل الاسم');
-    if (ok[0].role === 'admin' && (ok[0].passkeys || []).length && !pkOff()) throw new Err(403, 'حساب الأدمن بيدخل بالبصمة بس. استخدم زرار الدخول بالبصمة.');
+    if (ok[0].role === 'admin' && (ok[0].passkeys || []).length && !pkOff()) { for (const [k, v] of enrollTk) if (v.exp < Date.now()) enrollTk.delete(k); const tk = crypto.randomBytes(24).toString('hex'); enrollTk.set(tk, { userId: ok[0].id, exp: Date.now() + 600000 }); throw new Err(403, 'الجهاز ده مش متسجّل بالبصمة. اضغط «إضافة بصمة على الجهاز ده» تحت، وهنسجّلها على طول.', { passkeyOnly: true, ticket: tk }); }
     return login(res, ok[0]);
   }
   if (m === 'GET' && p === '/api/passkeys') { need(u); return send(res, 200, { keys: (u.passkeys || []).map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt })), adminOnly: u.role === 'admin' && !pkOff() }); }
   if (m === 'POST' && p === '/api/passkey/register/options') {
-    need(u); const rp = pkRp(req), c = pkNew('reg', u.id);
-    return send(res, 200, { cid: c.id, publicKey: { challenge: c.challenge, rp: { id: rp.rpId, name: 'Tekmoo' }, user: { id: b64u('u' + u.id), name: u.username + (u.phone ? ' (' + u.phone + ')' : ''), displayName: u.username }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }], timeout: 60000, attestation: 'none', authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'required' }, excludeCredentials: (u.passkeys || []).map(k => ({ type: 'public-key', id: k.id })) } });
+    const b = await body(req);
+    if (!u && b.ticket) { const e2 = enrollTk.get(String(b.ticket)); if (!e2 || e2.exp < Date.now()) throw new Err(400, 'انتهت صلاحية الإضافة، سجّل دخول تاني'); const u2 = db.users.find(x => x.id === e2.userId); if (!u2) throw new Err(400, 'حساب غير صالح'); return send(res, 200, { ticket: String(b.ticket), ...pkRegOptions(u2, req) }); }
+    need(u); return send(res, 200, pkRegOptions(u, req));
   }
   if (m === 'POST' && p === '/api/passkey/register/verify') {
-    need(u); const b = await body(req), rp = pkRp(req), c = pkTake(b.cid, 'reg'); if (c.userId !== u.id) throw new Err(400, 'التحقق فشل');
-    const r = (b.credential || {}).response || {}; pkClient(r.clientDataJSON, 'webauthn.create', c, rp);
-    let att; try { att = cborDecode(unb64u(r.attestationObject))[0]; } catch { throw new Err(400, 'بيانات غير صالحة'); }
-    const ad = att.get('authData'); if (!Buffer.isBuffer(ad) || ad.length < 55) throw new Err(400, 'بيانات غير صالحة');
-    if (!ad.subarray(0, 32).equals(crypto.createHash('sha256').update(rp.rpId).digest())) throw new Err(400, 'التحقق فشل');
-    const fl = ad[32]; if (!(fl & 1) || !(fl & 4) || !(fl & 64)) throw new Err(400, 'لازم تأكد بالبصمة أو قفل الجهاز');
-    const clen = ad.readUInt16BE(53), credId = ad.subarray(55, 55 + clen), key = cborDecode(ad.subarray(55 + clen))[0];
-    let pub, alg = key.get(3);
-    try {
-      if (alg === -7 && key.get(1) === 2) pub = crypto.createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: b64u(key.get(-2)), y: b64u(key.get(-3)) }, format: 'jwk' });
-      else if (alg === -257 && key.get(1) === 3) pub = crypto.createPublicKey({ key: { kty: 'RSA', n: b64u(key.get(-1)), e: b64u(key.get(-2)) }, format: 'jwk' });
-      else throw new Error('alg');
-    } catch { throw new Err(400, 'نوع المفتاح مش مدعوم'); }
-    if (db.users.some(x => (x.passkeys || []).some(k => k.id === b64u(credId)))) throw new Err(409, 'البصمة دي متسجلة قبل كده');
-    if ((u.passkeys || []).length >= 10) throw new Err(400, 'وصلت للحد الأقصى من الأجهزة');
-    (u.passkeys = u.passkeys || []).push({ id: b64u(credId), alg, pub: pub.export({ type: 'spki', format: 'der' }).toString('base64'), counter: ad.readUInt32BE(33), name: String(b.name || '').trim().slice(0, 40) || 'جهاز', createdAt: new Date().toISOString() });
-    save(db); return send(res, 200, { ok: true, count: u.passkeys.length });
+    const b = await body(req);
+    if (!u && b.ticket) {
+      const tk = String(b.ticket), e2 = enrollTk.get(tk);
+      if (!e2 || e2.exp < Date.now()) throw new Err(400, 'انتهت صلاحية الإضافة، سجّل دخول تاني');
+      const u2 = db.users.find(x => x.id === e2.userId); if (!u2) throw new Err(400, 'حساب غير صالح');
+      pkRegFinish(u2, b, req); enrollTk.delete(tk);
+      return login(res, u2);
+    }
+    need(u); const n = pkRegFinish(u, b, req);
+    return send(res, 200, { ok: true, count: n });
   }
   if (m === 'POST' && p === '/api/passkey/delete') {
     need(u); const b = await body(req), n = (u.passkeys || []).length; u.passkeys = (u.passkeys || []).filter(k => k.id !== String(b.id || ''));
@@ -420,6 +414,30 @@ function pkClient(cdj, type, c, rp) {
   return crypto.createHash('sha256').update(unb64u(cdj)).digest();
 }
 const pkOff = () => process.env.ADMIN_PASSKEY_OFF === '1';
+const enrollTk = new Map();
+function pkRegOptions(u, req) {
+  const rp = pkRp(req), c = pkNew('reg', u.id);
+  return { cid: c.id, publicKey: { challenge: c.challenge, rp: { id: rp.rpId, name: 'Tekmoo' }, user: { id: b64u('u' + u.id), name: u.username + (u.phone ? ' (' + u.phone + ')' : ''), displayName: u.username }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }], timeout: 60000, attestation: 'none', authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'required' }, excludeCredentials: (u.passkeys || []).map(k => ({ type: 'public-key', id: k.id })) } };
+}
+function pkRegFinish(u, b, req) {
+  const rp = pkRp(req), c = pkTake(b.cid, 'reg'); if (c.userId !== u.id) throw new Err(400, 'التحقق فشل');
+  const r = (b.credential || {}).response || {}; pkClient(r.clientDataJSON, 'webauthn.create', c, rp);
+  let att; try { att = cborDecode(unb64u(r.attestationObject))[0]; } catch { throw new Err(400, 'بيانات غير صالحة'); }
+  const ad = att.get('authData'); if (!Buffer.isBuffer(ad) || ad.length < 55) throw new Err(400, 'بيانات غير صالحة');
+  if (!ad.subarray(0, 32).equals(crypto.createHash('sha256').update(rp.rpId).digest())) throw new Err(400, 'التحقق فشل');
+  const fl = ad[32]; if (!(fl & 1) || !(fl & 4) || !(fl & 64)) throw new Err(400, 'لازم تأكد بالبصمة أو قفل الجهاز');
+  const clen = ad.readUInt16BE(53), credId = ad.subarray(55, 55 + clen), key = cborDecode(ad.subarray(55 + clen))[0];
+  let pub, alg = key.get(3);
+  try {
+    if (alg === -7 && key.get(1) === 2) pub = crypto.createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: b64u(key.get(-2)), y: b64u(key.get(-3)) }, format: 'jwk' });
+    else if (alg === -257 && key.get(1) === 3) pub = crypto.createPublicKey({ key: { kty: 'RSA', n: b64u(key.get(-1)), e: b64u(key.get(-2)) }, format: 'jwk' });
+    else throw new Error('alg');
+  } catch { throw new Err(400, 'نوع المفتاح مش مدعوم'); }
+  if (db.users.some(x => (x.passkeys || []).some(k => k.id === b64u(credId)))) throw new Err(409, 'البصمة دي متسجلة قبل كده');
+  if ((u.passkeys || []).length >= 10) throw new Err(400, 'وصلت للحد الأقصى (10 أجهزة). امسح جهاز قديم الأول.');
+  (u.passkeys = u.passkeys || []).push({ id: b64u(credId), alg, pub: pub.export({ type: 'spki', format: 'der' }).toString('base64'), counter: ad.readUInt32BE(33), name: String(b.name || '').trim().slice(0, 40) || 'جهاز', createdAt: new Date().toISOString() });
+  save(db); return u.passkeys.length;
+}
 const pkRate = new Map();
 function pkLimit(ip) { const now = Date.now(), a = (pkRate.get(ip) || []).filter(t => now - t < 600000); if (a.length >= 40) throw new Err(429, 'محاولات كتير، استنى شوية'); a.push(now); pkRate.set(ip, a); }
 function login(res, user) {
@@ -443,7 +461,7 @@ function start() { http.createServer(async (req, res) => {
     const ext = path.extname(fp), versioned = url.searchParams.has('v') && ext !== '.html';
     const noCache = ext === '.html' || f === 'sw.js' || f === 'manifest.webmanifest';
     res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': noCache ? 'no-cache' : versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=86400', ...(f === 'sw.js' ? { 'Service-Worker-Allowed': '/' } : {}) }); fs.createReadStream(fp).pipe(res);
-  } catch (e) { send(res, e.code || 500, { error: e.code ? e.message : 'حصل خطأ في السيرفر', ...(e.captchaRequired ? { captchaRequired: true } : {}) }); }
+  } catch (e) { send(res, e.code || 500, { error: e.code ? e.message : 'حصل خطأ في السيرفر', ...(e.captchaRequired ? { captchaRequired: true } : {}), ...(e.extra || {}) }); }
 }).listen(PORT, () => console.log(`المتجر شغال على http://localhost:${PORT}`)); }
 (async () => {
   let stored = null;

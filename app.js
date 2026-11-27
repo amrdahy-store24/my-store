@@ -3,7 +3,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 let me = null, offer = null, cat = '', products = [], cart = JSON.parse(localStorage.getItem('cart') || '[]'), flash = '';
 async function api(url, method = 'GET', data) {
   const r = await fetch(url, { method, headers: data ? { 'Content-Type': 'application/json' } : {}, body: data ? JSON.stringify(data) : undefined });
-  const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error(j.error || 'حصل خطأ'); e.capReq = !!j.captchaRequired; throw e; } return j;
+  const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error(j.error || 'حصل خطأ'); e.capReq = !!j.captchaRequired; e.pkOnly = !!j.passkeyOnly; e.pkTicket = j.ticket || ''; throw e; } return j;
 }
 const saveCart = () => localStorage.setItem('cart', JSON.stringify(cart));
 const cartCount = () => cart.reduce((s, i) => s + i.qty, 0);
@@ -207,6 +207,7 @@ function authView(v, f) {
   ${reg ? `<label>الدولة</label><select id="cn" onchange="regCountry(this.value)">${cOpts(COUNTRY)}</select><label>رقم الموبايل</label><input id="ph" inputmode="tel" autocomplete="tel" dir="ltr" style="text-align:right" placeholder="${COUNTRY === 'EG' ? '01xxxxxxxxx' : '+9665xxxxxxxx'}">` : ''}<label>الباسورد</label><input id="p" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}"><div id="capw" ${reg ? '' : 'style="display:none"'}><label>كود التحقق (عشان نتأكد إنك مش روبوت)</label><div class="cap" id="cap"></div><input id="cp" onkeydown="if(event.key==='Enter')auth(\'${v}\')" autocomplete="off" autocapitalize="characters" maxlength="8" placeholder="اكتب الحروف اللي في الصورة" dir="ltr" style="text-align:center;letter-spacing:3px"></div>
   ${reg ? '' : '<label class="rmb"><input type="checkbox" id="rm"><span>تذكرني</span></label>'}
   ${reg ? '' : '<button class="btn wide ghost" id="pkb" style="display:none;margin-bottom:8px" onclick="pkLogin()">🔐 الدخول بالبصمة (من غير كود تحقق)</button>'}
+  ${reg ? '' : '<div class="alt" id="enw" style="display:none;margin-bottom:8px"><a onclick="pkEnroll()" style="font-weight:800">➕ إضافة بصمة على الجهاز ده (بكلمة سر الأدمن)</a></div>'}
   <button class="btn wide" onclick="auth('${v}')">${reg ? 'إنشاء الحساب' : 'دخول'}</button>
   ${reg ? '' : '<div class="alt" style="margin-top:10px"><a onclick="go(\'forgot\')">نسيت الباسورد؟</a></div>'}
   <div class="alt">${reg ? 'عندك حساب؟ <a onclick="go(\'login\')">سجّل دخول</a>' : 'مش عندك حساب؟ <a onclick="go(\'register\')">أنشئ حساب</a>'}</div></div>`;
@@ -233,19 +234,37 @@ async function pkAdd() {
     flash = msg('اتفعّلت البصمة ✓', 'ok'); go(view);
   } catch (e) { const m = $('#pkm'); if (m) m.innerHTML = msg(e && e.name === 'NotAllowedError' ? 'اتلغت العملية' : (e.message || 'حصل خطأ')); }
 }
+async function pkEnroll() {
+  const m = $('#m'), en = $('#enw');
+  try {
+    const tk = window.pkTicket || '';
+    if (!tk) throw new Error('سجّل دخولك بكلمة السر وكود التحقق الأول، وبعدها اضغط الزرار ده.');
+    if (m) m.innerHTML = msg('بنجهّز الجهاز... اتبع رسالة البصمة من المتصفح', 'ok');
+    const o = await api('/api/passkey/register/options', 'POST', { ticket: tk });
+    const pk = o.publicKey; pk.challenge = pkU(pk.challenge); pk.user.id = pkU(pk.user.id); pk.excludeCredentials = (pk.excludeCredentials || []).map(x => ({ ...x, id: pkU(x.id) }));
+    const c = await navigator.credentials.create({ publicKey: pk });
+    const devName = isIOS() ? 'آيفون' : /android/i.test(navigator.userAgent) ? 'أندرويد' : 'كمبيوتر';
+    const r = await api('/api/passkey/register/verify', 'POST', { ticket: tk, cid: o.cid, name: devName, credential: { id: c.id, response: { clientDataJSON: pkB(c.response.clientDataJSON), attestationObject: pkB(c.response.attestationObject) } } });
+    window.pkTicket = ''; if (en) en.style.display = 'none';
+    await afterLogin(r.user);
+  } catch (e) {
+    const txt = e && e.name === 'NotAllowedError' ? 'اتلغت عملية البصمة. جرّب تاني واضغط «سماح» لما المتصفح يسأل.' : (e.message || 'حصل خطأ');
+    if (m) m.innerHTML = msg(txt);
+  }
+}
 async function pkDel(id) { if (!confirm('تحذف البصمة دي؟')) return; try { await api('/api/passkey/delete', 'POST', { id }); go(view); } catch (e) { const m = $('#pkm'); if (m) m.innerHTML = msg(e.message); } }
 async function pkPanel() {
   if (!me || !(await pkAvail())) return; const app = $('#app'); if (!app || !['orders', 'admin'].includes(view)) return;
   let r; try { r = await api('/api/passkeys'); } catch { return; }
   const d = document.createElement('div'); d.className = 'panel'; d.id = 'pkpanel';
-  d.innerHTML = `<h2>الدخول بالبصمة</h2><div id="pkm"></div><p class="small">${me.role === 'admin' ? 'سجّل بصمة على كل جهاز بتستخدمه (موبايل وكمبيوتر). أول ما تسجّل بصمة، دخول الأدمن بيبقى بالبصمة بس.' : 'فعّل البصمة / قفل الشاشة عشان تدخل بسرعة من غير باسورد وكود تحقق.'}</p>` +
-    r.keys.map(k => `<div class="pr"><div><b>${esc(k.name)}</b><div class="sm">${new Date(k.createdAt).toLocaleDateString('ar-EG')}</div></div><button class="rm" onclick="pkDel('${esc(k.id)}')">حذف</button></div>`).join('') +
+  d.innerHTML = `<h2>الدخول بالبصمة</h2><div id="pkm"></div><p class="small">${me.role === 'admin' ? 'كل جهاز بيسجّل بصمته لوحده، وتقدر تسجّل لحد ١٠ أجهزة (موبايلك، موبايل أخوك، الكمبيوتر). عشان تضيف جهاز جديد: افتح المتجر على الجهاز ده، اضغط «دخول»، اكتب يوزر وباسورد الأدمن وكود التحقق، وبعدها اضغط «إضافة بصمة على الجهاز ده». أول ما فيه بصمة متسجلة، دخول الأدمن بيبقى بالبصمة بس.' : 'فعّل البصمة / قفل الشاشة عشان تدخل بسرعة من غير باسورد وكود تحقق.'}</p><p class="small">الأجهزة المسجلة: <b>${r.keys.length}</b>${r.keys.length >= 10 ? ' (وصلت للحد الأقصى، امسح جهاز مش مستخدم)' : ''}</p>` +
+    r.keys.map(k => `<div class="pkr"><div><b>${esc(k.name)}</b><div class="sm">${new Date(k.createdAt).toLocaleDateString('ar-EG')}</div></div><button class="rm" onclick="pkDel('${esc(k.id)}')">حذف</button></div>`).join('') +
     `<label>اسم الجهاز</label><input id="pkn" maxlength="40" placeholder="مثلاً: موبايلي"><div class="row"><button class="btn" onclick="pkAdd()">🔐 تفعيل البصمة على الجهاز ده</button></div>`;
   app.appendChild(d);
 }
 async function auth(v) {
   try { const r = await api('/api/' + v, 'POST', { username: $('#u').value, password: $('#p').value, phone: v === 'register' ? $('#ph').value : undefined, country: v === 'register' ? $('#cn').value : undefined, captcha: $('#cp').value, captchaToken: window.capTok }); try { if (v === 'login') { const rm = $('#rm'); if (rm && rm.checked) localStorage.setItem('ru', $('#u').value.trim()); else localStorage.removeItem('ru'); } } catch {} await afterLogin(r.user); }
-  catch (e) { $('#m').innerHTML = msg(e.message); const w = $('#capw'); if (e.capReq && w) w.style.display = ''; if (v === 'register' || (w && w.style.display !== 'none')) loadCap(); }
+  catch (e) { $('#m').innerHTML = msg(e.message); const w = $('#capw'); if (e.capReq && w) w.style.display = ''; const en = $('#enw'); if (e.pkOnly && en) { window.pkTicket = e.pkTicket || ''; en.style.display = ''; } if (v === 'register' || (w && w.style.display !== 'none')) loadCap(); }
 }
 function forgotView(f) {
   $('#app').innerHTML = `<div class="panel narrow"><div class="ai">${ic('lock', 30)}</div><h2>نسيت الباسورد؟</h2><p class="small" style="margin-top:-8px">اكتب اسم المستخدم ورقم الموبايل اللي سجلت بيه، وهنبعتلك باسورد مؤقت على الواتساب.</p>${f}<div id="m"></div>
