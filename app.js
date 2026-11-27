@@ -46,7 +46,7 @@ function renderMenu() {
   el.innerHTML = `<div class="mov" onclick="closeMenu()"></div><aside class="msh" role="dialog" aria-label="القائمة"><div class="mh">${WM()}<button class="mx" onclick="closeMenu()" aria-label="إغلاق">✕</button></div>
   <div class="ms"><h4>حسابي</h4>${acc}</div>
   <div class="ms"><h4>الأقسام</h4>${cl.length ? `<div class="mch"><button onclick="menuCat('')">الكل</button>${cl.map(c => `<button onclick="menuCat(this.dataset.c)" data-c="${esc(c.id)}">${esc(c.name)}</button>`).join('')}</div>` : '<p class="mhint">مفيش أقسام لسه</p>'}</div>
-  <div class="ms"><h4>الدعم الفني</h4>${wa ? link('spark', 'محتاج مساعدة؟ كلّمنا واتساب', `https://wa.me/${wa}?text=${encodeURIComponent('محتاج مساعدة في المتجر')}`) : ''}</div>
+  ${installCard('menu')}<div class="ms"><h4>الدعم الفني</h4>${wa ? link('spark', 'محتاج مساعدة؟ كلّمنا واتساب', `https://wa.me/${wa}?text=${encodeURIComponent('محتاج مساعدة في المتجر')}`) : ''}</div>
   <div class="ms"><h4>تواصل معنا</h4>${wa ? link('user', 'واتساب', `https://wa.me/${wa}`, '+' + wa) + link('truck', 'اتصال', `tel:+${wa}`, '+' + wa) : ''}</div>
   <div class="ms"><h4>الإعدادات</h4><div class="mset"><span>اللغة</span><div class="seg"><button class="${LANG === 'ar' ? 'on' : ''}" onclick="setLang('ar')">العربية</button><button class="${LANG === 'en' ? 'on' : ''}" onclick="setLang('en')">English</button></div></div>
   <div class="mset"><span>الدولة</span><select class="csel" onchange="setCountry(this.value)">${cOpts(COUNTRY)}</select></div>
@@ -105,9 +105,36 @@ function sliderHtml() {
   const n = items.length + 1;
   return `<div class="slider" role="region" aria-roledescription="carousel" aria-label="العروض" onmouseenter="this.classList.add('pz')" onmouseleave="this.classList.remove('pz')" onfocusin="this.classList.add('pz')" onfocusout="this.classList.remove('pz')" ontouchstart="slX=event.touches[0].clientX;this.classList.add('pz')" ontouchend="const d=event.changedTouches[0].clientX-slX;if(Math.abs(d)>40)slGo(slI+(d<0?1:-1));setTimeout(()=>this.classList.remove('pz'),3000)"><div class="sl">${hero}${offs}</div><button class="arr nx" aria-label="السابق" onclick="slGo(slI-1)">${'›'}</button><button class="arr pv" aria-label="التالي" onclick="slGo(slI+1)">${'‹'}</button><div class="dots">${Array.from({ length: n }, (_, j) => `<button class="dot${j ? '' : ' on'}" aria-label="شريحة ${j + 1}" onclick="slGo(${j})"></button>`).join('')}</div></div>`;
 }
+let inst = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); inst = e; repaintInstall(); });
+addEventListener('appinstalled', () => { inst = null; try { localStorage.setItem('pwaHide', '1'); } catch {} repaintInstall(); });
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const pwaHidden = () => { try { return localStorage.getItem('pwaHide') === '1'; } catch { return false; } };
+function repaintInstall() { const el = document.getElementById('pwa'); if (el) el.outerHTML = installCard(); const mi = document.getElementById('pwaMenu'); if (mi) mi.outerHTML = installCard('menu'); }
+function installCard(where) {
+  if (standalone() || pwaHidden()) return '';
+  const ios = isIOS();
+  if (where === 'menu') return `<div class="ms" id="pwaMenu"><h4>التطبيق</h4><button class="mi" onclick="closeMenu();pwaInstall()"><span class="mic">${ic('plus', 20)}</span><span class="mt">ثبّت تِكمو على شاشتك<small>${ios ? 'أيقونة على الشاشة الرئيسية' : 'يفتح بضغطة واحدة وأسرع'}</small></span></button></div>`;
+  return `<div class="pwa" id="pwa"><span class="pwi"><img src="icon-192.png?v=34" alt="" width="44" height="44"></span><div class="pwt"><b>ثبّت تِكمو على شاشتك</b><small>${ios ? 'اضغط تثبيت وورينا الخطوات' : 'يفتح بضغطة واحدة من غير متصفح'}</small></div><button class="btn pwb" onclick="pwaInstall()">تثبيت</button><button class="pwx" onclick="pwaHide()" aria-label="إخفاء">✕</button></div>`;
+}
+async function pwaInstall() {
+  if (inst) { try { inst.prompt(); await inst.userChoice; } catch {} inst = null; repaintInstall(); return; }
+  showInstallHelp();
+}
+function pwaHide() { try { localStorage.setItem('pwaHide', '1'); } catch {} const el = document.getElementById('pwa'); if (el) el.remove(); }
+function showInstallHelp() {
+  const old = document.getElementById('pwahint'); if (old) old.remove();
+  const steps = isIOS()
+    ? ['اضغط زر المشاركة ⬆️ تحت في المتصفح', 'اختار «إضافة إلى الشاشة الرئيسية»', 'اضغط «إضافة» — أيقونة تِكمو هتظهر على شاشتك']
+    : ['افتح قائمة المتصفح ⋮ فوق على اليمين', 'اختار «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»', 'اضغط «تثبيت» — أيقونة تِكمو هتظهر على شاشتك'];
+  const el = document.createElement('div'); el.id = 'pwahint';
+  el.innerHTML = `<div class="mov" onclick="document.getElementById('pwahint').remove()"></div><div class="cpanel" role="dialog" aria-label="تثبيت التطبيق"><div class="ctop"><b>ثبّت تِكمو على شاشتك</b><button class="mx" onclick="document.getElementById('pwahint').remove()" aria-label="إغلاق">✕</button></div><div class="clist">${steps.map((t, i) => `<div class="ci"><span>${i + 1}. ${esc(t)}</span></div>`).join('')}</div></div>`;
+  document.body.appendChild(el);
+}
 function shop(f) {
   slI = 0; setTimeout(slStart, 0); $('#app').innerHTML = f + sliderHtml() + `<div class="perks">${['truck', 'cash', 'shield'].map(k => `<button class="perk" onclick="perkOpen('${k}',this)" aria-haspopup="dialog"><i>${ic(PK[k].i, 26)}</i><b>${chL(PK[k].a, PK[k].e)}</b></button>`).join('')}</div>
-  <div class="sh" id="prods"><h3>المنتجات<span>${pv().length} منتج</span></h3><div class="search"><input id="q" placeholder="ابحث عن منتج..." oninput="filt()"></div></div><div id="chips">${chipHtml()}</div>` +
+  ${installCard()}<div class="sh" id="prods"><h3>المنتجات<span>${pv().length} منتج</span></h3><div class="search"><input id="q" placeholder="ابحث عن منتج..." oninput="filt()"></div></div><div id="chips">${chipHtml()}</div>` +
   (pv().length ? `<div class="grid">${pv().map(p => `<div class="card" onclick="cardTap(event,this,${p.id})" data-c="${esc(p.cat || '')}" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
   <div class="b"><div class="nm">${esc(p.name)}</div><div class="small">${esc(p.description)}</div><div class="price">${money(cPrice(p))}<small>${sym()}</small></div>
   <button class="btn" ${p.stock < 1 ? 'disabled' : ''} onclick="event.stopPropagation();addCart(${p.id})">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button></div></div>`).join('')}</div>` : `<div class="panel empty"><div class="e">${ic('bag', 56)}</div>مفيش منتجات حاليًا، ارجع قريب.</div>`);
@@ -403,3 +430,4 @@ function cardTap(e, el, id) {
   el.classList.add('tap'); el.appendChild(s);
   setTimeout(() => { cardBusy = false; el.classList.remove('tap'); s.remove(); openProd(id); }, matchMedia('(prefers-reduced-motion:reduce)').matches ? 0 : 260);
 }
+if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
