@@ -39,6 +39,15 @@ function save(db) {
   fs.writeFileSync(DB_FILE + '.tmp', JSON.stringify(db, null, 1)); fs.renameSync(DB_FILE + '.tmp', DB_FILE);
 }
 let db;
+// one-shot admin password sync: re-hash the admin password from the ADMIN_PASS env var, only when that value changes
+function syncAdminPass() {
+  if (!process.env.ADMIN_PASS) return;
+  const tag = crypto.createHash('sha256').update(String(process.env.ADMIN_PASS)).digest('hex');
+  if (db.adminPassSync === tag) return;
+  const adm = db.users.find(u => u.role === 'admin'); if (!adm) return;
+  adm.salt = crypto.randomBytes(16).toString('hex'); adm.hash = hash(process.env.ADMIN_PASS, adm.salt); db.adminPassSync = tag; save(db);
+  console.log('admin password synced from ADMIN_PASS env');
+}
 let soonT = null;
 function saveSoon() { if (soonT) return; soonT = setTimeout(() => { soonT = null; save(db); }, 1500); }
 function flushNow() { try { if (soonT) { clearTimeout(soonT); soonT = null; } if (db) save(db); } catch (e) { console.error(e.message); } return chain; }
@@ -471,5 +480,5 @@ function start() { http.createServer(async (req, res) => {
     await pool.query('CREATE TABLE IF NOT EXISTS store(id int primary key, data jsonb not null)');
     const r = await pool.query('SELECT data FROM store WHERE id=1'); stored = r.rows[0] && r.rows[0].data;
   }
-  db = load(stored); db.sessions = db.sessions || {}; db.users.forEach(x => { if (x.role === 'customer') x.status = 'active'; }); db.products.forEach(x => { const id = catResolve(x.cat) || catResolve(x.category); if (id) { x.cat = id; x.category = CATN[id].name; } else { x.cat = ''; if (x.category === undefined) x.category = ''; } }); sweepSessions(); save(db); setInterval(sweepSessions, 3600000).unref(); start();
+  db = load(stored); db.sessions = db.sessions || {}; syncAdminPass(); db.users.forEach(x => { if (x.role === 'customer') x.status = 'active'; }); db.products.forEach(x => { const id = catResolve(x.cat) || catResolve(x.category); if (id) { x.cat = id; x.category = CATN[id].name; } else { x.cat = ''; if (x.category === undefined) x.category = ''; } }); sweepSessions(); save(db); setInterval(sweepSessions, 3600000).unref(); start();
 })();
