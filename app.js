@@ -45,7 +45,7 @@ function renderMenu() {
   const el = document.createElement('div'); el.id = 'menu';
   el.innerHTML = `<div class="mov" onclick="closeMenu()"></div><aside class="msh" role="dialog" aria-label="القائمة"><div class="mh">${WM()}<button class="mx" onclick="closeMenu()" aria-label="إغلاق">✕</button></div>
   <div class="ms"><h4>حسابي</h4>${acc}</div>
-  <div class="ms"><h4>الأقسام</h4>${cl.length ? `<div class="mch"><button onclick="menuCat('')">الكل</button>${cl.map(c => `<button onclick="menuCat(this.dataset.c)" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>` : '<p class="mhint">مفيش أقسام لسه</p>'}</div>
+  <div class="ms"><h4>الأقسام</h4>${cl.length ? `<div class="mch"><button onclick="menuCat('')">الكل</button>${cl.map(c => `<button onclick="menuCat(this.dataset.c)" data-c="${esc(c.id)}">${esc(c.name)}</button>`).join('')}</div>` : '<p class="mhint">مفيش أقسام لسه</p>'}</div>
   <div class="ms"><h4>الدعم الفني</h4>${wa ? link('spark', 'محتاج مساعدة؟ كلّمنا واتساب', `https://wa.me/${wa}?text=${encodeURIComponent('محتاج مساعدة في المتجر')}`) : ''}</div>
   <div class="ms"><h4>تواصل معنا</h4>${wa ? link('user', 'واتساب', `https://wa.me/${wa}`, '+' + wa) + link('truck', 'اتصال', `tel:+${wa}`, '+' + wa) : ''}</div>
   <div class="ms"><h4>الإعدادات</h4><div class="mset"><span>اللغة</span><div class="seg"><button class="${LANG === 'ar' ? 'on' : ''}" onclick="setLang('ar')">العربية</button><button class="${LANG === 'en' ? 'on' : ''}" onclick="setLang('en')">English</button></div></div>
@@ -54,7 +54,7 @@ function renderMenu() {
   document.body.appendChild(el);
 }
 function setTheme(d) { if (d === (document.documentElement.getAttribute('data-theme') === 'dark')) return; toggleTheme(); if (menuOpen) renderMenu(); }
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && menuOpen) closeMenu(); });
+document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; const cs = document.getElementById('catsheet'); if (cs) return cs.remove(); if (menuOpen) closeMenu(); });
 let dataAt = 0, dataSig = '';
 async function loadData() {
   const [p, o] = await Promise.all([api('/api/products?c=' + COUNTRY + (me && me.role === 'admin' ? '&all=1' : '')).catch(() => null), api('/api/offer').catch(() => null)]);
@@ -75,11 +75,23 @@ async function go(v, arg, quiet) {
   if (v === 'orders') return ordersView(f).then(pkPanel);
   if (v === 'admin') return loadData().catch(() => {}).then(() => adminView(f, arg)).then(chAdminPanel).then(pkPanel);
 }
-function filt() { const q = ($('#q') ? $('#q').value : '').trim().toLowerCase(); document.querySelectorAll('.card').forEach(c => c.style.display = c.dataset.s.includes(q) && (!cat || c.dataset.c === cat) ? '' : 'none'); }
-function setCat(c) { cat = c; document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.c === c)); filt(); }
+const CATS = (typeof window !== 'undefined' && window.CATEGORIES) || [];
+const CATN = {}; CATS.forEach(c => { CATN[c.id] = { id: c.id, name: c.name, parent: '' }; c.children.forEach(s => { CATN[s.id] = { id: s.id, name: s.name, parent: c.id }; }); });
+const catName = id => (CATN[id] ? CATN[id].name : '');
+const catPath = id => { const n = CATN[id]; if (!n) return ''; return n.parent ? CATN[n.parent].name + ' › ' + n.name : n.name; };
+const catIds = id => { const s = new Set([id]); for (const k of Object.keys(CATN)) if (CATN[k].parent === id) s.add(k); return s; };
+const catHas = (p, id) => !id || p.cat === id || (CATN[id] && !CATN[id].parent && p.cat && CATN[p.cat] && CATN[p.cat].parent === id);
+const catTree = () => CATS.map(c => ({ id: c.id, name: c.name, n: pv().filter(p => catHas(p, c.id)).length, kids: c.children.map(s => ({ id: s.id, name: s.name, n: pv().filter(p => p.cat === s.id).length })).filter(k => k.n) })).filter(c => c.n);
+function chipHtml() {
+  const tops = catTree(), top = cat ? (CATN[cat] && CATN[cat].parent ? CATN[cat].parent : cat) : '', tn = top ? CATS.find(c => c.id === top) : null;
+  const kids = tn ? tn.children.map(s => ({ id: s.id, name: s.name, n: pv().filter(p => p.cat === s.id).length })).filter(k => k.n) : [];
+  return `<div class="chips"><button class="chip${cat ? '' : ' on'}" data-c="" onclick="setCat('')">الكل</button>${tops.map(c => `<button class="chip${cat === c.id ? ' on' : ''}" data-c="${c.id}" onclick="setCat(this.dataset.c)">${esc(c.name)}</button>`).join('')}</div>` +
+    (kids.length ? `<div class="chips sub"><button class="chip2${cat === top ? ' on' : ''}" data-c="${top}" onclick="setCat(this.dataset.c)">كل ${esc(tn.name)}</button>${kids.map(k => `<button class="chip2${cat === k.id ? ' on' : ''}" data-c="${k.id}" onclick="setCat(this.dataset.c)">${esc(k.name)}</button>`).join('')}</div>` : '');
+}
+function filt() { const q = ($('#q') ? $('#q').value : '').trim().toLowerCase(); const ids = cat ? catIds(cat) : null; document.querySelectorAll('.card').forEach(c => c.style.display = c.dataset.s.includes(q) && (!ids || ids.has(c.dataset.c)) ? '' : 'none'); }
+function setCat(c) { cat = c || ''; const el = $('#chips'); if (el) el.innerHTML = chipHtml(); filt(); }
 const vis = p => cPrice(p) != null, pv = () => (view === 'admin' ? products : products.filter(vis));
-const cats = () => [...new Set(pv().map(p => p.category).filter(Boolean))];
-const catList = () => [...new Set(['إلكترونيات', 'ملابس', 'أدوات منزلية', 'إكسسوارات', ...products.map(p => p.category).filter(Boolean)])];
+const cats = () => catTree();
 let slI = 0, slT = null;
 function slGo(n) { const s = document.querySelectorAll('.slider .slide'); if (!s.length) return; slI = (n + s.length) % s.length; s.forEach((e, i) => e.classList.toggle('on', i === slI)); document.querySelectorAll('.slider .dot').forEach((e, i) => { e.classList.toggle('on', i === slI); e.setAttribute('aria-current', i === slI); }); }
 function slStart() { clearInterval(slT); const el = document.querySelector('.slider'); if (!el || el.querySelectorAll('.slide').length < 2 || matchMedia('(prefers-reduced-motion:reduce)').matches) return; slT = setInterval(() => { const e = document.querySelector('.slider'); if (!e) { clearInterval(slT); return; } if (e.classList.contains('pz')) return; slGo(slI + 1); }, 5000); }
@@ -94,11 +106,12 @@ function sliderHtml() {
   return `<div class="slider" role="region" aria-roledescription="carousel" aria-label="العروض" onmouseenter="this.classList.add('pz')" onmouseleave="this.classList.remove('pz')" onfocusin="this.classList.add('pz')" onfocusout="this.classList.remove('pz')" ontouchstart="slX=event.touches[0].clientX;this.classList.add('pz')" ontouchend="const d=event.changedTouches[0].clientX-slX;if(Math.abs(d)>40)slGo(slI+(d<0?1:-1));setTimeout(()=>this.classList.remove('pz'),3000)"><div class="sl">${hero}${offs}</div><button class="arr nx" aria-label="السابق" onclick="slGo(slI-1)">${'›'}</button><button class="arr pv" aria-label="التالي" onclick="slGo(slI+1)">${'‹'}</button><div class="dots">${Array.from({ length: n }, (_, j) => `<button class="dot${j ? '' : ' on'}" aria-label="شريحة ${j + 1}" onclick="slGo(${j})"></button>`).join('')}</div></div>`;
 }
 function shop(f) {
-  cat = ''; slI = 0; setTimeout(slStart, 0); $('#app').innerHTML = f + sliderHtml() + `<div class="perks">${['truck', 'cash', 'shield'].map(k => `<button class="perk" onclick="perkOpen('${k}',this)" aria-haspopup="dialog"><i>${ic(PK[k].i, 26)}</i><b>${chL(PK[k].a, PK[k].e)}</b></button>`).join('')}</div>
-  <div class="sh" id="prods"><h3>المنتجات<span>${pv().length} منتج</span></h3><div class="search"><input id="q" placeholder="ابحث عن منتج..." oninput="filt()"></div></div>${cats().length > 0 ? `<div class="chips"><button class="chip on" data-c="" onclick="setCat('')">الكل</button>${cats().map(c => `<button class="chip" data-c="${esc(c)}" onclick="setCat(this.dataset.c)">${esc(c)}</button>`).join('')}</div>` : ''}` +
-  (pv().length ? `<div class="grid">${pv().map(p => `<div class="card" onclick="cardTap(event,this,${p.id})" data-c="${esc(p.category || '')}" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
+  slI = 0; setTimeout(slStart, 0); $('#app').innerHTML = f + sliderHtml() + `<div class="perks">${['truck', 'cash', 'shield'].map(k => `<button class="perk" onclick="perkOpen('${k}',this)" aria-haspopup="dialog"><i>${ic(PK[k].i, 26)}</i><b>${chL(PK[k].a, PK[k].e)}</b></button>`).join('')}</div>
+  <div class="sh" id="prods"><h3>المنتجات<span>${pv().length} منتج</span></h3><div class="search"><input id="q" placeholder="ابحث عن منتج..." oninput="filt()"></div></div><div id="chips">${chipHtml()}</div>` +
+  (pv().length ? `<div class="grid">${pv().map(p => `<div class="card" onclick="cardTap(event,this,${p.id})" data-c="${esc(p.cat || '')}" data-s="${esc((p.name + ' ' + p.description).toLowerCase())}"><div class="img ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}${p.stock < 1 ? '<span class="tag out">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="tag low">باقي ${p.stock} فقط</span>` : ''}</div>
   <div class="b"><div class="nm">${esc(p.name)}</div><div class="small">${esc(p.description)}</div><div class="price">${money(cPrice(p))}<small>${sym()}</small></div>
   <button class="btn" ${p.stock < 1 ? 'disabled' : ''} onclick="event.stopPropagation();addCart(${p.id})">${p.stock < 1 ? 'غير متاح' : ic('cart', 16) + ' أضف للسلة'}</button></div></div>`).join('')}</div>` : `<div class="panel empty"><div class="e">${ic('bag', 56)}</div>مفيش منتجات حاليًا، ارجع قريب.</div>`);
+  if (cat) filt();
 }
 let after = null;
 function needLogin(next, text) { after = next; flash = msg(text); go('login'); }
@@ -116,7 +129,7 @@ function prodView(f, id) {
   const specs = lines.filter(l => /^[^:：]{1,30}[:：]\s*\S/.test(l)).map(l => l.split(/[:：]/)), desc = lines.filter(l => !/^[^:：]{1,30}[:：]\s*\S/.test(l));
   const st = p.stock < 1 ? '<span class="stk o">نفذت الكمية</span>' : p.stock <= 3 ? `<span class="stk l">باقي ${p.stock} فقط</span>` : '<span class="stk g">متوفر</span>';
   $('#app').innerHTML = f + `<a class="back" onclick="go('shop')">→ رجوع للمنتجات</a><div class="pd"><div class="pdi ${p.image ? '' : 'ph'}" style="${imgStyle(p)}">${imgIn(p)}</div>
-  <div class="pdb">${p.category ? `<span class="catpill">${esc(p.category)}</span>` : ''}<h1>${esc(p.name)}</h1><div class="pdp">${cPrice(p) == null ? '<small>غير متاح في ' + cnm(COUNTRY) + ' حاليًا</small>' : money(cPrice(p)) + '<small>' + sym() + '</small>'}</div>${st}
+  <div class="pdb">${p.cat ? `<button class="catpill" onclick="menuCat('${esc(p.cat)}')">${esc(catPath(p.cat))}</button>` : ''}<h1>${esc(p.name)}</h1><div class="pdp">${cPrice(p) == null ? '<small>غير متاح في ' + cnm(COUNTRY) + ' حاليًا</small>' : money(cPrice(p)) + '<small>' + sym() + '</small>'}</div>${st}
   ${desc.length ? `<h4>الوصف</h4><p class="pdd">${desc.map(esc).join('<br>')}</p>` : ''}
   ${specs.length ? `<h4>المواصفات</h4><table class="spec">${specs.map(r => `<tr><th>${esc(r[0].trim())}</th><td>${esc(r.slice(1).join(':').trim())}</td></tr>`).join('')}</table>` : ''}
   <div class="cod" style="margin:14px 0">${ic('cash', 18)} الدفع عند الاستلام</div>
@@ -236,17 +249,17 @@ async function ordersView(f) {
   <div class="small">${esc(o.username)} • ${new Date(o.date).toLocaleString('ar-EG')}</div>
   <div style="margin:6px 0">${o.items.map(i => esc(i.name) + ' × ' + i.qty).join('، ')}</div><div><b>${money(o.total)} ${o.sym || 'ج.م'}</b>${o.shipping ? ` <span class="small">(شحن ${money(o.shipping)})</span>` : ''} <span class="small">• ${esc(o.address)} • ${esc(o.phone)}</span></div></div>`).join('') : `<div class="empty"><div class="e">${ic('box', 56)}</div>مفيش طلبات لحد دلوقتي.</div>`) + `</div><div class="panel narrow" style="margin-top:16px"><h2>تغيير الباسورد</h2><div id="pm"></div><label>الباسورد الحالي</label><input id="op" type="password" autocomplete="current-password"><label>الباسورد الجديد</label><input id="np" type="password" autocomplete="new-password"><button class="btn wide" onclick="chPw()">حفظ الباسورد الجديد</button></div>`;
 }
-let editing = null;
+let editing = null, catSel = '';
 async function adminView(f, tab) {
   if (!me || me.role !== 'admin') return go('login');
-  const { orders } = await api('/api/orders'); const { users } = await api('/api/users'); const e = editing || {};
+  const { orders } = await api('/api/orders'); const { users } = await api('/api/users'); const e = editing || {}; catSel = editing ? (editing.cat || '') : '';
   const revText = Object.entries(orders.filter(o => o.status !== 'ملغي').reduce((m, o) => { const k = o.sym || 'ج.م'; m[k] = (m[k] || 0) + Number(o.total); return m; }, {})).map(([k, v]) => money(v) + ' ' + k).join(' + ') || '0';
   const rev = orders.filter(o => o.status !== 'ملغي').reduce((s, o) => s + Number(o.total), 0);
   $('#app').innerHTML = f + `<h2 style="margin:6px 0 14px;font-weight:800">لوحة التحكم</h2><div class="stats"><div class="stat"><span>المنتجات</span><b>${products.length}</b></div><div class="stat"><span>الطلبات</span><b>${orders.length}</b></div>
   <div class="stat"><span>طلبات جديدة</span><b>${orders.filter(o => o.status === 'جديد').length}</b></div><div class="stat"><span>إجمالي المبيعات</span><b>${revText}</b></div><div class="stat"><span>العملاء</span><b>${users.length}</b></div></div>
   <div class="adm"><div class="panel"><h2>${editing ? 'تعديل منتج' : 'إضافة منتج'}</h2><div id="m"></div>
   <label>الاسم</label><input id="n" value="${esc(e.name)}"><p class="small">اختار الدول اللي هتبيع فيها المنتج واكتب السعر بعملة كل دولة. المنتج مش هيظهر في أي دولة مش متعلّم عليها.</p>${['EG', 'SA', 'AE', 'IQ', 'OM'].map(c => { const v = c === 'EG' ? e.price : (e.prices || {})[c], on = v != null && v !== ''; return `<div class="cnr" style="margin:8px 0"><label style="display:flex;gap:8px;align-items:center;margin:0"><input type="checkbox" id="on_${c}" ${on ? 'checked' : ''} onchange="$('#${c === 'EG' ? 'pr' : 'pr_' + c}').style.display=this.checked?'':'none'" style="width:auto"> ${CNT[c].ar} (${CNT[c].sym})</label><input id="${c === 'EG' ? 'pr' : 'pr_' + c}" type="number" min="0" step="0.01" placeholder="السعر بـ${CNT[c].sym}" value="${on ? v : ''}" style="${on ? '' : 'display:none'}"></div>`; }).join('')}
-  <label>القسم</label><input id="cg" list="cgl" value="${esc(e.category)}" placeholder="اختار قسم أو اكتب قسم جديد"><datalist id="cgl">${catList().map(c => `<option value="${esc(c)}">`).join('')}</datalist><label>الكمية المتاحة</label><input id="st" type="number" min="0" value="${e.stock ?? ''}"><label>الوصف</label><textarea id="d" rows="3">${esc(e.description)}</textarea>
+  <label>القسم</label><button type="button" class="catfield${catSel ? ' has' : ''}" id="cgbtn" onclick="openCat()"><span>${catSel ? esc(catPath(catSel)) : 'اختار القسم من القائمة'}</span></button><input type="hidden" id="cg" value="${esc(catSel)}"><p class="small">اختار القسم عشان المنتج يظهر تحت القسم الصح في المتجر.</p><label>الكمية المتاحة</label><input id="st" type="number" min="0" value="${e.stock ?? ''}"><label>الوصف</label><textarea id="d" rows="3">${esc(e.description)}</textarea>
   <label>صورة المنتج (اختياري - ارفع صورة أو حط رابط)</label><input id="img" value="${esc(e.image && !e.image.startsWith('data:') && !e.image.startsWith('/img/') ? e.image : '')}" placeholder="https://..."><input type="file" id="file" accept="image/*">
   <div class="row"><button class="btn" onclick="saveProd()">${editing ? 'حفظ التعديل' : '＋ إضافة المنتج'}</button>${editing ? '<button class="btn gray" onclick="editing=null;go(\'admin\')">إلغاء</button>' : ''}</div></div>
   <div><div class="panel"><h2>شرائح العروض (السلايدر أعلى الصفحة الرئيسية)</h2><div id="om"></div>
@@ -254,7 +267,7 @@ async function adminView(f, tab) {
   <label>عنوان صغير فوق كل عرض (اختياري، مثلاً: عرض)</label><input id="ot" value="${esc(offer && offer.title)}"><label>نص العروض (كل سطر عرض = شريحة منفصلة في السلايدر)</label><textarea id="ox" rows="4">${esc(offer && offer.text)}</textarea>
   
   <button class="btn" onclick="saveOffer()">حفظ العرض</button></div>
-  <div class="panel"><h2>المنتجات (${products.length})</h2>${products.map(p => `<div class="pr"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div><div><b>${esc(p.name)}</b><div class="sm">${['EG', ...Object.keys(p.prices || {})].filter(c => c !== 'EG' || p.price != null).map(c => CNT[c].ar).join('، ')} • الكمية ${p.stock}</div></div>
+  <div class="panel"><h2>المنتجات (${products.length})</h2>${products.map(p => `<div class="pr"><div class="im" style="${imgStyle(p)}">${imgIn(p)}</div><div><b>${esc(p.name)}</b><div class="sm">${p.cat ? esc(catPath(p.cat)) + ' • ' : ''}${['EG', ...Object.keys(p.prices || {})].filter(c => c !== 'EG' || p.price != null).map(c => CNT[c].ar).join('، ')} • الكمية ${p.stock}</div></div>
   <div class="row"><button class="btn gray" onclick="editProd(${p.id})">تعديل</button><button class="btn red" onclick="delProd(${p.id})">حذف</button></div></div>`).join('') || '<div class="empty">لسه مفيش منتجات.</div>'}</div>
   <div class="panel"><h2>العملاء المسجلين (${users.length})</h2>${users.map(x => `<div class="pr" style="grid-template-columns:1fr auto"><div><b>${esc(x.username)}</b>${x.resetAt ? ' <span class="st s2">طلب نسيان باسورد</span>' : ''}<div class="sm" dir="ltr" style="text-align:right">${esc(x.phone) || 'بدون رقم'} • ${x.createdAt ? new Date(x.createdAt).toLocaleDateString('en-GB') : '-'}</div><div id="rs${x.id}"></div></div>
   <div class="row"><button class="btn red" onclick="delUser(${x.id},'${esc(x.username)}')">حذف</button><button class="btn gray" onclick="resetUser(${x.id},'${esc(x.username)}','${esc(x.phone)}')">باسورد مؤقت</button></div></div>`).join('') || '<div class="empty">لسه مفيش عملاء.</div>'}</div>
@@ -270,12 +283,24 @@ function editProd(id) { editing = products.find(p => p.id === id); go('admin'); 
 async function delProd(id) { if (!confirm('متأكد إنك عايز تحذف المنتج؟')) return; try { await api('/api/products/' + id, 'DELETE'); flash = msg('اتحذف ✓', 'ok'); } catch (e) { flash = msg(e.message); } go('admin'); }
 async function setStatus(id, s) { try { await api(`/api/orders/${id}/status`, 'PUT', { status: s }); const b = $('#do' + id); if (b) b.style.display = s === 'ملغي' ? '' : 'none'; } catch (e) { alert(e.message); } }
 function readFile(f) { return new Promise((ok, no) => { const r = new FileReader(); r.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, 600 / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = im.width * k; c.height = im.height * k; c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', .8)); }; im.onerror = () => no(new Error('صورة غير صالحة')); im.src = r.result; }; r.onerror = no; r.readAsDataURL(f); }); }
+function openCat(top) {
+  const old = document.getElementById('catsheet'); if (old) old.remove();
+  const c = top ? CATS.find(x => x.id === top) : null;
+  const body = c ? `<div class="csh"><button class="cback" onclick="openCat()">→ كل الأقسام</button><h4>${esc(c.name)}</h4><div class="clist"><button class="ci on" onclick="pickCat('${c.id}')"><span>كل ${esc(c.name)}</span><span class="cnt">القسم الرئيسي</span></button>${c.children.map(s => `<button class="ci" onclick="pickCat('${s.id}')"><span>${esc(s.name)}</span></button>`).join('')}</div></div>`
+    : `<div class="csh"><h4>اختار القسم الرئيسي</h4><div class="clist">${CATS.map(x => `<button class="ci" onclick="openCat('${x.id}')"><span>${esc(x.name)}</span><span class="cnt">${x.children.length} فرعي</span></button>`).join('')}</div></div>`;
+  const el = document.createElement('div'); el.id = 'catsheet';
+  el.innerHTML = `<div class="mov" onclick="closeCat()"></div><div class="cpanel" role="dialog" aria-label="اختار القسم"><div class="ctop"><b>الأقسام</b><button class="mx" onclick="closeCat()" aria-label="إغلاق">✕</button></div>${body}</div>`;
+  document.body.appendChild(el);
+}
+function closeCat() { const e = document.getElementById('catsheet'); if (e) e.remove(); }
+function pickCat(id) { catSel = id; closeCat(); const b = document.getElementById('cgbtn'), h = document.getElementById('cg'); if (h) h.value = id; if (b) { b.innerHTML = `<span>${esc(catPath(id))}</span>`; b.classList.add('has'); } }
 async function saveProd() {
   try {
     let image = $('#img').value.trim(); const file = $('#file').files[0];
     if (file) image = await readFile(file); else if (!image && editing && (editing.image.startsWith('data:') || editing.image.startsWith('/img/'))) image = editing.image;
     for (const c of ['EG', 'SA', 'AE', 'IQ', 'OM']) if ($('#on_' + c).checked && !(+$('#' + (c === 'EG' ? 'pr' : 'pr_' + c)).value > 0)) throw new Error('اكتب سعر المنتج في ' + CNT[c].ar);
-    const data = { name: $('#n').value, price: $('#on_EG').checked ? $('#pr').value : '', prices: Object.fromEntries(['SA', 'AE', 'IQ', 'OM'].map(c => [c, $('#on_' + c).checked ? ($('#pr_' + c).value || '') : ''])), stock: $('#st').value, description: $('#d').value, image, category: $('#cg').value };
+    if (!$('#cg').value) throw new Error('اختار القسم من القائمة');
+    const data = { name: $('#n').value, price: $('#on_EG').checked ? $('#pr').value : '', prices: Object.fromEntries(['SA', 'AE', 'IQ', 'OM'].map(c => [c, $('#on_' + c).checked ? ($('#pr_' + c).value || '') : ''])), stock: $('#st').value, description: $('#d').value, image, cat: $('#cg').value };
     if (editing) await api('/api/products/' + editing.id, 'PUT', data); else await api('/api/products', 'POST', data);
     flash = msg(editing ? 'اتعدل ✓' : 'اتضاف ✓', 'ok'); editing = null; go('admin');
   } catch (e) { $('#m').innerHTML = msg(e.message); }

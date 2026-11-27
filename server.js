@@ -1,5 +1,8 @@
 // متجر إلكتروني - بدون أي مكتبات خارجية. شغّله: node server.js
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
+const CATEGORIES = require('./categories.js');
+const CATN = {}; CATEGORIES.forEach(c => { CATN[c.id] = { id: c.id, name: c.name, parent: '' }; c.children.forEach(s => { CATN[s.id] = { id: s.id, name: s.name, parent: c.id }; }); });
+function catResolve(txt) { const t = String(txt || '').trim(); if (!t) return ''; if (CATN[t]) return t; for (const id of Object.keys(CATN)) if (CATN[id].name === t) return id; for (const c of CATEGORIES) if (c.name === t) return c.id; for (const id of Object.keys(CATN)) if (CATN[id].name.includes(t) || t.includes(CATN[id].name)) return id; return ''; }
 const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, 'data.json');
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
@@ -161,7 +164,9 @@ function cleanProduct(b) {
   if (image && !/^(https?:\/\/|data:image\/|\/img\/)/.test(image)) throw new Err(400, 'رابط الصورة غير صحيح');
   if (egBlank && !Object.values(b.prices || {}).some(v => v !== '' && v != null)) throw new Err(400, 'حط سعر منتج في دولة واحدة على الأقل');
   const prices = {}; for (const c of Object.keys(COUNTRIES)) { if (c === 'EG') continue; const raw = (b.prices || {})[c]; if (raw === '' || raw == null) continue; const v = Number(raw); if (!(v > 0) || !isFinite(v) || v > 1e9) throw new Err(400, 'سعر ' + COUNTRIES[c].ar + ' غير صحيح'); prices[c] = Math.round(v * 100) / 100; }
-  return { name: name.slice(0, 100), price: egBlank ? null : Math.round(price * 100) / 100, prices, stock, description: String(b.description || '').slice(0, 1000), image, category: String(b.category || '').trim().slice(0, 40) };
+  const catId = catResolve(b.cat) || catResolve(b.category);
+  if (b.cat && !catId) throw new Err(400, 'القسم غير صحيح');
+  return { name: name.slice(0, 100), price: egBlank ? null : Math.round(price * 100) / 100, prices, stock, description: String(b.description || '').slice(0, 1000), image, cat: catId, category: catId ? CATN[catId].name : String(b.category || '').trim().slice(0, 40) };
 }
 
 
@@ -328,6 +333,7 @@ async function api(req, res, url) {
     for (const f of FAQ) { const t = String((b.answers || {})[f.id] || '').trim().slice(0, 600); if (t && t !== f.a) ov[f.id] = t; }
     db.chatFaq = ov; save(db); return send(res, 200, { faq: chatFaq() });
   }
+  if (m === 'GET' && p === '/api/categories') return send(res, 200, { categories: CATEGORIES });
   if (m === 'GET' && p === '/api/config') return send(res, 200, { ownerWhatsapp: OWNER_WHATSAPP });
   if (m === 'GET' && p === '/api/me') return send(res, 200, { user: pub(u) });
   if (m === 'GET' && p === '/api/products') {
@@ -432,7 +438,7 @@ function start() { http.createServer(async (req, res) => {
       return res.end(url.pathname === '/robots.txt' ? `User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: ${base}/sitemap.xml\n` : `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url></urlset>\n`);
     }
     const f = url.pathname === '/' ? 'index.html' : path.basename(url.pathname);
-    const fp = ['index.html','style.css','app.js','i18n.js','favicon.svg','apple-touch-icon.png','og.png'].includes(f) ? path.join(__dirname, f) : '/nonexistent';
+    const fp = ['index.html','style.css','app.js','i18n.js','categories.js','favicon.svg','apple-touch-icon.png','og.png'].includes(f) ? path.join(__dirname, f) : '/nonexistent';
     if (!fs.existsSync(fp)) { res.writeHead(404); return res.end('404'); }
     const ext = path.extname(fp), versioned = url.searchParams.has('v') && ext !== '.html';
     res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=86400' }); fs.createReadStream(fp).pipe(res);
@@ -446,5 +452,5 @@ function start() { http.createServer(async (req, res) => {
     await pool.query('CREATE TABLE IF NOT EXISTS store(id int primary key, data jsonb not null)');
     const r = await pool.query('SELECT data FROM store WHERE id=1'); stored = r.rows[0] && r.rows[0].data;
   }
-  db = load(stored); db.sessions = db.sessions || {}; db.users.forEach(x => { if (x.role === 'customer') x.status = 'active'; }); db.products.forEach(x => { if (x.category === undefined) x.category = 'إلكترونيات'; }); sweepSessions(); save(db); setInterval(sweepSessions, 3600000).unref(); start();
+  db = load(stored); db.sessions = db.sessions || {}; db.users.forEach(x => { if (x.role === 'customer') x.status = 'active'; }); db.products.forEach(x => { const id = catResolve(x.cat) || catResolve(x.category); if (id) { x.cat = id; x.category = CATN[id].name; } else { x.cat = ''; if (x.category === undefined) x.category = ''; } }); sweepSessions(); save(db); setInterval(sweepSessions, 3600000).unref(); start();
 })();
